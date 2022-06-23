@@ -1,0 +1,5 @@
+[core]
+    autostage = true
+    remote = gdrive
+['remote "gdrive"']
+    url = gdrive://17h1tZKcCifi5-5GBtJpaDIUFnlQ8wMZK/seed

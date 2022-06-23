@@ -15,7 +15,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from multiprocessing import Pool
 from transformers import HfArgumentParser
-from functools import partial
+import wikitextparser as wtp
 
 connections.create_connection(hosts=["http://ckg05:9200/"], timeout=100)
 nlp = spacy.load("en_core_web_sm")
@@ -69,10 +69,10 @@ def replace_random_words(df, sentence, text):
     valid_words = list(
         filter(lambda x: x.pos_ in ["VERB", "NOUN", "PROPN", "NUM"], sentence_doc)
     )
-
-    chosen_word = random.choice(valid_words)
-
-    text_doc = nlp(text)
+    try:
+        chosen_word = random.choice(valid_words)
+    except:
+        return None
 
     valid_replacements = list(
         filter(
@@ -173,12 +173,6 @@ def generate_negative_examples(df, sample, sentence):
 
     while valid_choices:
         i = random.choice(valid_choices)
-
-        # print(
-        #     i,
-        #     sample["highlighted_cells"],
-        #     [df.iloc[i, j] for i, j in sample["highlighted_cells"]],
-        # )
         if sample["highlighted_cells"]:
             rows = [x[0] for x in sample["highlighted_cells"]]
             most_dominant_row = max(set(rows), key=rows.count)
@@ -187,6 +181,7 @@ def generate_negative_examples(df, sample, sentence):
 
         if i not in [3, 4]:
             new_sentence = t2func[i](df, sentence, doc)
+                
             if new_sentence is not None:
                 new_sample = sample.copy()
                 new_sample["sentence"] = new_sentence
@@ -263,8 +258,8 @@ class Argument:
         metadata={"help": "Path to the output file"},
     )
     cache_file: str = field(
-        default="re",
-        metadata={"help": ".cache/title2text.json"},
+        default=".cache/title2text.json",
+        metadata={"help": "Path to cache file"},
     )
     filter: bool = field(
         default=False, metadata={"help": "Filter out samples with no highlighted cells"}
@@ -289,18 +284,22 @@ if __name__ == "__main__":
 
             print("Processing sentences")
 
-            ms = MultiSearch(index="en_wiki_2")
+            for i in range(0, len(samples), 10000):
+                ms = MultiSearch(index="test_en")
 
-            for sample in samples:
-                ms = ms.add(Search().query("match", title=sample["table_page_title"]))
+                for sample in samples[i: i + 10000]:
+                    ms = ms.add(Search().query("match", title__keyword=sample["table_page_title"]))
 
-            responses = ms.execute()
+                responses = ms.execute()
 
-            for response in responses:
-                if not response.hits:
-                    continue
-                if not response.hits[0]["title"] in title2text:
-                    title2text[response.hits[0]["title"]] = response.hits[0]["text"]
+                for response in responses:
+                    if not response.hits:
+                        continue
+                    if not response.hits[0]["title"] in title2text:
+                        try:
+                            title2text[response.hits[0]["title"]] = wtp.remove_markup(response.hits[0]["text"])
+                        except:
+                            title2text[response.hits[0]["title"]] = response.hits[0]["text"]
 
         json.dump(title2text, open(args.cache_file, "w"))
 

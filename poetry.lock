@@ -1294,6 +1294,14 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "wcwidth"
+version = "0.2.5"
+description = "Measures the displayed width of unicode strings in a terminal"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "wikipedia"
 version = "1.4.0"
 description = "Wikipedia API for Python"
@@ -1304,6 +1312,22 @@ python-versions = "*"
 [package.dependencies]
 beautifulsoup4 = "*"
 requests = ">=2.0.0,<3.0.0"
+
+[[package]]
+name = "wikitextparser"
+version = "0.49.2"
+description = "A simple parsing tool for MediaWiki's wikitext markup."
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[package.dependencies]
+regex = "*"
+wcwidth = "*"
+
+[package.extras]
+dev = ["path.py", "coverage", "twine"]
+tests = ["pytest"]
 
 [[package]]
 name = "xxhash"
@@ -1328,7 +1352,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "50aca1844222ef511fcdc972df201439eec38d4d216d3d05aaa6fe2ebbf14f36"
+content-hash = "9bd2803400bacf2b850cc4cf2f2edf1c234ae94341e17dfb186893a4a6c83074"
 
 [metadata.files]
 accelerate = [
@@ -2711,8 +2735,16 @@ wasabi = [
     {file = "wasabi-0.9.1-py3-none-any.whl", hash = "sha256:217edcb2850993c7931399e7419afccde13539d589e333bc85f9053cf0bb1772"},
     {file = "wasabi-0.9.1.tar.gz", hash = "sha256:ada6f13e9b70ef26bf95fad0febdfdebe2005e29a08ad58f4bbae383a97298cf"},
 ]
+wcwidth = [
+    {file = "wcwidth-0.2.5-py2.py3-none-any.whl", hash = "sha256:beb4802a9cebb9144e99086eff703a642a13d6a0052920003a230f3294bbe784"},
+    {file = "wcwidth-0.2.5.tar.gz", hash = "sha256:c4d647b99872929fdb7bdcaa4fbe7f01413ed3d98077df798530e5b04f116c83"},
+]
 wikipedia = [
     {file = "wikipedia-1.4.0.tar.gz", hash = "sha256:db0fad1829fdd441b1852306e9856398204dc0786d2996dd2e0c8bb8e26133b2"},
+]
+wikitextparser = [
+    {file = "wikitextparser-0.49.2-py3-none-any.whl", hash = "sha256:1e2d420e226d6e7d334efefc532d722c25b9f16c06c9f1f923a3667cc3aa889d"},
+    {file = "wikitextparser-0.49.2.tar.gz", hash = "sha256:7a456d4c4b81499cb5edb9a7e0467955ddf4773434a6b3eeeab08d4a3a91ea31"},
 ]
 xxhash = [
     {file = "xxhash-3.0.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:219cba13991fd73cf21a5efdafa5056f0ae0b8f79e5e0112967e3058daf73eea"},
