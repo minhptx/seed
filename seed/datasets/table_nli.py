@@ -66,7 +66,7 @@ class TableNLIDataset:
                 TableNLIExample(
                     table=table,
                     title=obj["title"],
-                    label=obj["label"],
+                    label=obj["label"] if "label" in obj else 1.0,
                     sentence=obj["sentence"],
                 )
             )
@@ -95,7 +95,7 @@ class TableNLIDataset:
                 dataset.data.append(
                     TableNLIExample(
                         table=table,
-                        label=obj["label"] if "label" in obj else False,
+                        label=obj["label"] if "label" in obj else 1.0,
                         sentence=obj["sentence"] if "sentence" in obj else "",
                         metadata={"page": obj["table_page_title"], "section": obj["table_section_title"]},
                     )
