@@ -77,6 +77,8 @@ class TableNLIDataset:
         dataset = TableNLIDataset()
         with jsonlines.open(file_path, "r") as reader:
             for obj in reader:
+                if obj is None:
+                    continue
                 table = pd.DataFrame(json.loads(obj["table"])).fillna("").astype(str)
 
                 if filter_cell:
@@ -109,8 +111,9 @@ class TableNLIDataset:
                 hypothesis=example.sentence,
                 table=example.table,
                 label=example.label,
-                title=example.metadata["table_page_title"],
+                title=example.metadata["page"],
             ))
+        return infotab_data
 
     def __getitem__(self, i):
         return self.data[i]
