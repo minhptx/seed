@@ -33,7 +33,6 @@ class TableDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         item = self.data.iloc[idx]
-        print(item)
         table = pd.DataFrame(json.loads(item["table"])).astype(str)
         if len(table.columns) > 200:
             table = table.iloc[:, :199]
