@@ -66,7 +66,7 @@ class TableNLIDataset:
                 TableNLIExample(
                     table=table,
                     title=obj["title"],
-                    label=obj["label"],
+                    label=obj["label"] if "label" in obj else 1.0,
                     sentence=obj["sentence"],
                 )
             )
