@@ -97,15 +97,18 @@ def json_to_para(data, args):
 
     if args.rand_perm == 2:
         table_ids = []
-        for index, row in data.iterrows():
+        for index, row in enumerate(data):
+            row = row.to_dict()
             table_ids += [row["table_id"]]
         random.shuffle(table_ids)
-        for index, row in data.iterrows():
+        for index, row in enumerate(data):
+            row = row.to_dict()
             row["table_id"] = table_ids[index]
 
     if args.rand_perm == 1:
         table_ids = []
-        for index, row in data:
+        for index, row in enumerate(data):
+            row = row.to_dict()
             table_ids += [row["table_id"]]
 
         set_of_orignal = list(set(table_ids))
@@ -123,10 +126,13 @@ def json_to_para(data, args):
             table_id = row["table_id"]
             row["table_id"] = random_mapping_tableids[table_id]
 
-    for index, row in enumerate(data.iterrows()):
+    for index, row in enumerate(data):
+        row = row.to_dict()
         obj = row["table"].to_dict(orient="records")
 
-        obj = {x: [str(a) for a in y] for x, y in obj.items()}
+        print(obj)
+
+        obj = {x: [str(a) for a in y] for x, y in obj[0].items()}
         try:
             title = obj["title"][0]
         except KeyError as e:
@@ -420,8 +426,8 @@ def train(train_data, dev_data, test_data, args):
             + str(dev_acc))
         )
 
-        wandb.log({"dev_accuracy": dev_acc, "dev_gold": dev_gold, "dev_pred": dev_pred})
-        wandb.log({"test_accuracy": test_acc, "dev_gold": test_gold, "test_pred": test_pred})
+        wandb.log({"epoch": ep + 1,"loss": normalized_epoch_loss, "dev_accuracy": dev_acc, "dev_gold": dev_gold, "dev_pred": dev_pred, 
+        "test_accuracy": test_acc, "test_gold": test_gold, "test_pred": test_pred})
 
 
 def test_data(data, args):
@@ -483,7 +489,7 @@ class PreprocessArguments:
     model_name: str = field(
         default="model_4_0.301", metadata={"help": "The directory containing the model"}
     )
-    save_dir: str = field(
+    output_dir: str = field(
         default="temp/models/",
         metadata={"help": "The directory to save the data files"},
     )
@@ -502,10 +508,11 @@ if __name__ == "__main__":
     test_dataset = TableNLIDataset.from_jsonlines(args.test_file).to_infotab()
     datasets = [train_dataset, dev_dataset, test_dataset]
     for idx in range(2):
+        print("Processing dataset ...")
         datasets[idx] = json_to_para(datasets[idx], args)
         datasets[idx] = preprocess_roberta(datasets[idx], args)
 
-
+    print("Training ...")
     train_dataset, dev_dataset, test_dataset = datasets
     train(train_dataset, dev_dataset, test_dataset, args)
     

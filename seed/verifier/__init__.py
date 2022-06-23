@@ -1,7 +1,7 @@
 from .infotab import InfotabVerifier
 from .tapas import TapasVerifier
 
-class TapasFactory:
+class VerifierFactory:
     def __init__(self) -> None:
         pass
 

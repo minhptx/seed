@@ -313,4 +313,5 @@ if __name__ == "__main__":
 
         with jsonlines.open(args.output_path, mode="w") as writer:
             for result in results:
-                writer.write(result)
+                if result is not None:
+                    writer.write(result)
