@@ -1,12 +1,14 @@
 import json
 import os
 import sys
+from dataclasses import dataclass, field
 
 import datasets
 import jsonlines
 import pandas as pd
 import torch
 import torch.optim as optim
+import wandb
 from accelerate import Accelerator
 from datasets import Dataset, load_metric
 from tqdm import tqdm
@@ -19,10 +21,10 @@ from transformers import (
     TrainingArguments,
     get_linear_schedule_with_warmup,
 )
-import wandb
 
 metric = load_metric("accuracy")
 pd.set_option("mode.chained_assignment", "raise")
+
 
 class TableDataset(torch.utils.data.Dataset):
     def __init__(self, data, tokenizer):
@@ -54,15 +56,31 @@ class TableDataset(torch.utils.data.Dataset):
         return len(self.data)
 
 
+@dataclass
+class DataArguments:
+    train_file: str = field(
+        default="data/train.json",
+        metadata={"help": "The path to train data file"},
+    )
+    dev_file: str = field(
+        default="data/dev.json",
+        metadata={"help": "The path to dev data file"},
+    )
+    test_file: str = field(
+        default="data/test.json",
+        metadata={"help": "The path to test data file"},
+    )
+
+
 if __name__ == "__main__":
     wandb.init()
-    parser = HfArgumentParser((TrainingArguments))
+    parser = HfArgumentParser((TrainingArguments, DataArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
 
-        args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        args, data_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        args = parser.parse_args_into_dataclasses()
+        args, data_args = parser.parse_args_into_dataclasses()
     metric = load_metric("accuracy")
 
     tokenizer = TapasTokenizer.from_pretrained("google/tapas-base-finetuned-wtq")
@@ -72,21 +90,9 @@ if __name__ == "__main__":
     )
     model.num_labels = 2
 
-    train_df = pd.DataFrame(
-        list(
-            jsonlines.open(
-                f"data/totto_data/processed_train_data_tabularized_induced.jsonl"
-            )
-        )
-    )
+    train_df = pd.DataFrame(list(jsonlines.open(data_args.train_file)))[:100]
 
-    dev_df = pd.DataFrame(
-        list(
-            jsonlines.open(
-                f"data/totto_data/processed_dev_data_tabularized_induced.jsonl"
-            )
-        )
-    )
+    dev_df = pd.DataFrame(list(jsonlines.open(data_args.dev_file)))[:100]
 
     train_dataset = TableDataset(train_df, tokenizer)
     dev_dataset = TableDataset(dev_df, tokenizer)
@@ -110,7 +116,9 @@ if __name__ == "__main__":
 
     num_train_steps = len(train_dl) * num_epochs
     lr_scheduler = get_linear_schedule_with_warmup(
-        optimizer=optimizer, num_warmup_steps=100, num_training_steps=num_train_steps,
+        optimizer=optimizer,
+        num_warmup_steps=100,
+        num_training_steps=num_train_steps,
     )
 
     gradient_accumulation_steps = 1
@@ -148,15 +156,23 @@ if __name__ == "__main__":
             all_predictions.extend(accelerator.gather(predictions))
             all_labels.extend(accelerator.gather(batch["labels"]))
 
-
         dev_acc = metric.compute()
         accelerator.print(f"Eval epoch {epoch}:", dev_acc)
 
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)
-        
+
         model.save_pretrained(os.path.join(args.output_dir, str(epoch + 1)))
 
-        wandb.log({"epoch": epoch + 1,"loss": running_loss, "dev_accuracy": dev_acc, "dev_gold": all_labels, "dev_pred": all_predictions, 
-            "test_accuracy": dev_acc, "test_gold": all_labels, "test_pred": all_predictions})
-
+        wandb.log(
+            {
+                "epoch": epoch + 1,
+                "loss": running_loss,
+                "dev_accuracy": dev_acc,
+                "dev_gold": all_labels,
+                "dev_pred": all_predictions,
+                "test_accuracy": dev_acc,
+                "test_gold": all_labels,
+                "test_pred": all_predictions,
+            }
+        )

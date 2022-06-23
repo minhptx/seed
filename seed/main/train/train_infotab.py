@@ -457,7 +457,7 @@ def test_data(data, args):
     return results
 
 @dataclass
-class PreprocessArguments:
+class DataArguments:
     train_file: str = field(
         default="data/train.json",
         metadata={"help": "The path to train data file"},
@@ -495,7 +495,7 @@ class PreprocessArguments:
     )
 
 if __name__ == "__main__":
-    parser = HfArgumentParser((PreprocessArguments,))
+    parser = HfArgumentParser((DataArguments,))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))[0]
     else:
