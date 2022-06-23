@@ -185,7 +185,6 @@ def generate_negative_examples(df, sample, sentence):
             if new_sentence is not None:
                 new_sample = sample.copy()
                 new_sample["sentence"] = new_sentence
-                new_sample["label"] = 0
                 try:
                     new_sample["table"] = (
                         df.iloc[[most_dominant_row], :]
@@ -222,6 +221,7 @@ def generate_negative_examples(df, sample, sentence):
                     .drop("index", axis=1)
                     .to_json(orient="records")
                 )
+                new_sample["sentence"] = sentence
                 return new_sample, most_dominant_row
         valid_choices.remove(i)
 
@@ -232,7 +232,7 @@ def preprocess(sample):
 
     table = pd.DataFrame(json.loads(sample["table"]), index=None).fillna("")
     if len(table) == 0:
-        return sample
+        return sample, None
     sentences = [
         sample["sentence_annotations"][0]["original_sentence"],
         sample["sentence_annotations"][0]["sentence_after_deletion"],
@@ -243,8 +243,11 @@ def preprocess(sample):
     sentence = np.random.choice(sentences, 1, p=[0.4, 0.2, 0.2, 0.2]).tolist()[0]
 
     new_sample, _ = generate_negative_examples(table, sample, sentence)
-
-    return new_sample
+    if new_sample is not None:
+        new_sample["label"] = False
+    sample["label"] = True
+    sample["sentence"] = sentence
+    return new_sample, sample
 
 
 @dataclass
@@ -267,7 +270,7 @@ class Argument:
 
 
 if __name__ == "__main__":
-
+    print("checkking")
     parser = HfArgumentParser(Argument)
     args = parser.parse_args()
 
@@ -313,5 +316,7 @@ if __name__ == "__main__":
 
         with jsonlines.open(args.output_path, mode="w") as writer:
             for result in results:
-                if result is not None:
-                    writer.write(result)
+                if result[0] is not None:
+                    writer.write(result[0])
+                if result[1] is not None:
+                    writer.write(result[1])

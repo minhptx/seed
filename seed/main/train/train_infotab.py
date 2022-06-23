@@ -130,9 +130,10 @@ def json_to_para(data, args):
         row = row.to_dict()
         obj = row["table"].to_dict(orient="records")
 
-        print(obj)
-
-        obj = {x: [str(a) for a in y] for x, y in obj[0].items()}
+        if not obj:
+            continue
+        obj = obj[0]
+        obj["title"] = row['title']
         try:
             title = obj["title"][0]
         except KeyError as e:
@@ -167,12 +168,12 @@ def json_to_para(data, args):
                         line += (
                             "The " + str(key) + " of " + title + " " + verb_use + " "
                         )
-                    except TypeError:
+                    except TypeError as e:
+                        print(e)
                         print(row)
                         print(key)
                         print(title)
-                        exit()
-
+                        continue
                 for value in values[:-1]:
                     para += value + ", "
                     line += value + ", "
@@ -502,12 +503,12 @@ if __name__ == "__main__":
         args = parser.parse_args_into_dataclasses()
 
     wandb.init(project="seed", entity="clapika")
-
+    print("Reading datasets")
     train_dataset = TableNLIDataset.from_jsonlines(args.train_file).to_infotab()
     dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file).to_infotab()
     test_dataset = TableNLIDataset.from_jsonlines(args.test_file).to_infotab()
     datasets = [train_dataset, dev_dataset, test_dataset]
-    for idx in range(2):
+    for idx in range(3):
         print("Processing dataset ...")
         datasets[idx] = json_to_para(datasets[idx], args)
         datasets[idx] = preprocess_roberta(datasets[idx], args)

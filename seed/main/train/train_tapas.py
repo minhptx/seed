@@ -122,7 +122,7 @@ if __name__ == "__main__":
     )
 
     gradient_accumulation_steps = 1
-    progress_bar = tqdm(range(num_train_steps))
+    progress_bar = tqdm(range(int(num_train_steps)))
 
     for epoch in range(start_epoch, start_epoch + num_epochs):
         model.train()
