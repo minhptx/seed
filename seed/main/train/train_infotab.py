@@ -503,6 +503,7 @@ if __name__ == "__main__":
         args = parser.parse_args_into_dataclasses()
 
     wandb.init(project="seed", entity="clapika")
+    wandb.config({"model_name": "infotab"})
     print("Reading datasets")
     train_dataset = TableNLIDataset.from_jsonlines(args.train_file).to_infotab()
     dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file).to_infotab()

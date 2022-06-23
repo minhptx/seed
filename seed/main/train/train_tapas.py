@@ -73,7 +73,8 @@ class DataArguments:
 
 
 if __name__ == "__main__":
-    wandb.init()
+    wandb.init(project="seed", entity="clapika")
+    wandb.config({"model_name": "tapas"})
     parser = HfArgumentParser((TrainingArguments, DataArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
@@ -90,9 +91,9 @@ if __name__ == "__main__":
     )
     model.num_labels = 2
 
-    train_df = pd.DataFrame(list(jsonlines.open(data_args.train_file)))[:100].fillna(1.0)
+    train_df = pd.DataFrame(list(jsonlines.open(data_args.train_file)))
 
-    dev_df = pd.DataFrame(list(jsonlines.open(data_args.dev_file)))[:100].fillna(1.0)
+    dev_df = pd.DataFrame(list(jsonlines.open(data_args.dev_file)))
 
     train_dataset = TableDataset(train_df, tokenizer)
     dev_dataset = TableDataset(dev_df, tokenizer)
@@ -157,7 +158,7 @@ if __name__ == "__main__":
             all_labels.extend(accelerator.gather(batch["labels"]))
 
         dev_acc = metric.compute()
-        accelerator.print(f"Eval epoch {epoch}:", dev_acc)
+        accelerator.print(f"Eval epoch {epoch + 1}:", dev_acc)
 
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)

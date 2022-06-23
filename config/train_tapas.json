@@ -1,6 +1,6 @@
-{"output_dir": "models/tapas",     
+{   "output_dir": "models/tapas",     
     "train_file": "data/totto/train.jsonl",
     "dev_file": "data/totto/dev.jsonl",
     "test_file": "data/totto/dev.jsonl",
-    "num_train_epochs": 3
+    "num_train_epochs": 5
 }
