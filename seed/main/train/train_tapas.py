@@ -33,6 +33,7 @@ class TableDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         item = self.data.iloc[idx]
+        print(item)
         table = pd.DataFrame(json.loads(item["table"])).astype(str)
         if len(table.columns) > 200:
             table = table.iloc[:, :199]
@@ -90,9 +91,9 @@ if __name__ == "__main__":
     )
     model.num_labels = 2
 
-    train_df = pd.DataFrame(list(jsonlines.open(data_args.train_file)))[:100]
+    train_df = pd.DataFrame(list(jsonlines.open(data_args.train_file)))[:100].fillna(1.0)
 
-    dev_df = pd.DataFrame(list(jsonlines.open(data_args.dev_file)))[:100]
+    dev_df = pd.DataFrame(list(jsonlines.open(data_args.dev_file)))[:100].fillna(1.0)
 
     train_dataset = TableDataset(train_df, tokenizer)
     dev_dataset = TableDataset(dev_df, tokenizer)
@@ -122,7 +123,7 @@ if __name__ == "__main__":
     )
 
     gradient_accumulation_steps = 1
-    progress_bar = tqdm(range(num_train_steps))
+    progress_bar = tqdm(range(int(num_train_steps)))
 
     for epoch in range(start_epoch, start_epoch + num_epochs):
         model.train()
