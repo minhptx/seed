@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 import jsonlines
 import orjson as json
+import multiprocessing as mp
 
 @dataclass
 class InfotabExample:
@@ -15,8 +16,6 @@ class InfotabExample:
 
     def to_dict(self):
         return self.__dict__
-
-
 
 @dataclass
 class TableNLIExample:
