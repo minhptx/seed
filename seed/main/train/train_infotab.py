@@ -15,7 +15,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import tqdm
 import wandb
-from seed.datasets.table_nli import TableNLIDataset
+from seed.datasets.table_nli import TableNLIData
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
 
@@ -505,9 +505,9 @@ if __name__ == "__main__":
     wandb.init(project="seed", entity="clapika")
     wandb.config({"model_name": "infotab"})
     print("Reading datasets")
-    train_dataset = TableNLIDataset.from_jsonlines(args.train_file).to_infotab()
-    dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file).to_infotab()
-    test_dataset = TableNLIDataset.from_jsonlines(args.test_file).to_infotab()
+    train_dataset = TableNLIData.from_jsonlines(args.train_file).to_infotab()
+    dev_dataset = TableNLIData.from_jsonlines(args.dev_file).to_infotab()
+    test_dataset = TableNLIData.from_jsonlines(args.test_file).to_infotab()
     datasets = [train_dataset, dev_dataset, test_dataset]
     for idx in range(3):
         print("Processing dataset ...")

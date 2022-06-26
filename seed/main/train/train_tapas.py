@@ -1,3 +1,4 @@
+from functools import partial
 import json
 import os
 import sys
@@ -22,38 +23,10 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
+from seed.datasets.table_nli import TableNLIData
+
 metric = load_metric("accuracy")
 pd.set_option("mode.chained_assignment", "raise")
-
-
-class TableDataset(torch.utils.data.Dataset):
-    def __init__(self, data, tokenizer):
-        self.data = data
-        self.tokenizer = tokenizer
-
-    def __getitem__(self, idx):
-        item = self.data.iloc[idx]
-        table = pd.DataFrame(json.loads(item["table"])).astype(str)
-        if len(table.columns) > 200:
-            table = table.iloc[:, :199]
-
-        encoding = self.tokenizer(
-            table=table,
-            queries=str(item["sentence"]),
-            truncation=True,
-            padding=True,
-            return_tensors="pt",
-        )
-
-        token_type_ids = encoding["token_type_ids"]
-        token_type_ids[token_type_ids > 255] = 255
-
-        encoding = {key: val.squeeze(0) for key, val in encoding.items()}
-        encoding["labels"] = int(item["label"])
-        return encoding
-
-    def __len__(self):
-        return len(self.data)
 
 
 @dataclass
@@ -71,10 +44,28 @@ class DataArguments:
         metadata={"help": "The path to test data file"},
     )
 
+def encode_tapas(item, tokenizer):
+    if len(table.columns) > 200:
+        table = table.iloc[:, :199]
+
+    encoding = tokenizer(
+        table=item.table,
+        queries=str(item.sentence),
+        truncation=True,
+        padding=True,
+        return_tensors="pt",
+    )
+
+    token_type_ids = encoding["token_type_ids"]
+    token_type_ids[token_type_ids > 255] = 255
+
+    encoding = {key: val.squeeze(0) for key, val in encoding.items()}
+    encoding["labels"] = int(item["label"])
+    return encoding
+
 
 if __name__ == "__main__":
-    wandb.init(project="seed", entity="clapika")
-    wandb.config({"model_name": "tapas"})
+    wandb.init(project="seed", entity="clapika", config={"model_name": "tapas"})
     parser = HfArgumentParser((TrainingArguments, DataArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
@@ -91,21 +82,16 @@ if __name__ == "__main__":
     )
     model.num_labels = 2
 
-    train_df = pd.DataFrame(list(jsonlines.open(data_args.train_file)))
+    encode = partial(encode_tapas, tokenizer=tokenizer)
 
-    dev_df = pd.DataFrame(list(jsonlines.open(data_args.dev_file)))
-
-    train_dataset = TableDataset(train_df, tokenizer)
-    dev_dataset = TableDataset(dev_df, tokenizer)
-
-    for param in model.tapas.parameters():
-        param.requires_grad = False
+    train_dataset = TableNLIData.from_jsonlines(data_args.train_file).preprocess_use_func(encode)
+    dev_dataset = TableNLIData.from_jsonlines(data_args.dev_file).preprocess_use_func(encode)
 
     start_epoch = 0
     num_epochs = args.num_train_epochs
 
-    train_dl = torch.utils.data.DataLoader(train_dataset, shuffle=True)
-    eval_dl = torch.utils.data.DataLoader(dev_dataset, shuffle=False)
+    train_dl = torch.utils.data.DataLoader(train_dataset, shuffle=False, batch_size=1)
+    eval_dl = torch.utils.data.DataLoader(dev_dataset, shuffle=False, batch_size=1)
 
     accelerator = Accelerator()
 
