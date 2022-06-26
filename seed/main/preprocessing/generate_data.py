@@ -220,9 +220,10 @@ def generate_negative_examples(df, sample, sentence):
 
 
 def preprocess(sample):
-
     table = pd.DataFrame(json.loads(sample["table"]), index=None).fillna("")
     if len(table) == 0:
+        sample["label"] = True
+        sample["sentence"] = sample["sentence_annotations"][0]["original_sentence"]
         return sample, None
     sentences = [
         sample["sentence_annotations"][0]["original_sentence"],
