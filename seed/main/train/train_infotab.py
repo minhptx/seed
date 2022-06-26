@@ -144,9 +144,10 @@ def json_to_para(data, args):
 
         para = ""
 
+        print(obj)
         for key in obj:
             line = ""
-            values = obj[key]
+            values = [obj[key]]
             if isinstance(key, tuple):
                 key = " ".join(tuple)
 
@@ -155,7 +156,9 @@ def json_to_para(data, args):
             except:
                 res = False
 
-            if (len(values) > 1) or res:
+            print(values)
+
+            if (len(values) > 1) and res:
                 verb_use = "are"
                 if is_date("".join(values)):
                     para += title + " was " + str(key) + " on "
@@ -220,20 +223,20 @@ def json_to_para(data, args):
         if row["label"] == "C":
             label = 2
 
-        obj = [
-            index,
-            row["table_id"],
-            row["annotator_id"],
-            para,
-            row["hypothesis"],
-            label,
-        ]
+        obj = {
+            "index": index,
+            "table_id": row["table_id"],
+            "annotator_id": row["annotator_id"],
+            "premise": para,
+            "hypothesis": row["hypothesis"],
+            "label": label,
+        }
         result.append(obj)
     return result
 
 
 def preprocess_roberta(data, args):
-    new_tokenizer = AutoTokenizer.from_pretrained(args["tokenizer_type"])
+    new_tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_type)
     # Process for every split
     # Initialize dictionary to store processed information
     keys = ["uid", "encodings", "attention_mask", "segments", "labels"]
@@ -242,12 +245,13 @@ def preprocess_roberta(data, args):
     samples_processed = 0
     # Iterate over all data points
     for pt_dict in data:
+
         samples_processed += 1
         # Encode data. The premise and hypothesis are encoded as two different segments. The
         # maximum length is chosen as 504, i.e, 500 sub-word tokens and 4 special characters
         # If there are more than 504 sub-word tokens, sub-word tokens will be dropped from
         # the end of the longest sequence in the two (most likely the premise)
-        if args["single_sentence"]:
+        if args.single_sentence:
             pt_dict["hypothesis"] = str(pt_dict["hypothesis"])
             encoded_inps = new_tokenizer(
                 pt_dict["hypothesis"],
@@ -272,7 +276,7 @@ def preprocess_roberta(data, args):
         if "token_type_ids" not in encoded_inps.keys():
             encoded_inps["token_type_ids"] = [0] * len(encoded_inps["input_ids"])
 
-        data_dict["uid"].append(int(pt_dict["uid"]))
+        data_dict["uid"].append(int(pt_dict["index"]))
         data_dict["encodings"].append(encoded_inps["input_ids"])
         data_dict["attention_mask"].append(encoded_inps["attention_mask"])
         data_dict["segments"].append(encoded_inps["token_type_ids"])
@@ -281,10 +285,8 @@ def preprocess_roberta(data, args):
         if (samples_processed % 100) == 0:
             print("{} examples processed".format(samples_processed))
 
-        result.append(data_dict)
-
     print("Preprocessing Finished")
-    return result
+    return data_dict
 
 
 
@@ -315,7 +317,7 @@ def test(model, classifier, data):
 
     # Create Data Loader for the split
     dataset = TensorDataset(enc, attention_mask, segs, labs, ids)
-    loader = DataLoader(dataset, batch_size=args["batch_size"])
+    loader = DataLoader(dataset, batch_size=args.batch_size)
 
     model.eval()
     correct = 0
@@ -349,8 +351,8 @@ def train(train_data, dev_data, test_data, args):
     """
 
     # Creating required save directories
-    if not os.path.isdir(args["save_dir"] + args["save_folder"]):
-        os.mkdir(args["save_dir"] + args["save_folder"])
+    if not os.path.isdir(args.output_dir):
+        os.mkdir(args.output_dir)
 
     print("{} train data loaded".format(len(train_data["encodings"])))
     print("{} dev data loaded".format(len(dev_data["encodings"])))
@@ -364,24 +366,24 @@ def train(train_data, dev_data, test_data, args):
     train_ids = torch.tensor(train_data["uid"]).cuda()
 
     # Intialize Models
-    model = AutoModel.from_pretrained(args["model_type"]).cuda()
-    args["embed_size"] = model.config.hidden_size
+    model = AutoModel.from_pretrained(args.model_type).cuda()
+    args.embed_size = model.config.hidden_size
     classifier = FeedForward(
-        args["embed_size"], int(args["embed_size"] / 2), args["nooflabels"]
+        args.embed_size, int(args.embed_size / 2), 2
     ).cuda()
 
     # Creating the training dataloaders
     dataset = TensorDataset(
         train_enc, train_attention_mask, train_segs, train_labs, train_ids
     )
-    loader = DataLoader(dataset, batch_size=args["batch_size"])
+    loader = DataLoader(dataset, batch_size=args.batch_size)
 
     # Intialize the optimizer and loss functions
     params = list(model.parameters()) + list(classifier.parameters())
     optimizer = optim.Adagrad(params, lr=0.0001)
     loss_fn = nn.CrossEntropyLoss()
 
-    for ep in range(args["epochs"]):
+    for ep in range(args.epochs):
         epoch_loss = 0
         start = time.time()
         model.train()
@@ -421,7 +423,7 @@ def train(train_data, dev_data, test_data, args):
                 "loss": normalized_epoch_loss,
                 "dev_accuracy": dev_acc,
             },
-            os.path.join(args["save_dir"], "model_"
+            os.path.join(args.output_dir, "model_"
             + str(ep + 1)
             + "_"
             + str(dev_acc))
@@ -437,14 +439,13 @@ def test_data(data, args):
     ----------
     args - dict. Arguments passed via CLI
     """
-    result_dir = args.save_dir
     # Intialize model
     model = AutoModel.from_pretrained(args.model_type).cuda()
     embed_size = model.config.hidden_size
     classifier = FeedForward(embed_size, int(embed_size / 2), 2).cuda()
 
     # Load pre-trained models
-    checkpoint = torch.load(os.path.join(args.save_dir, args.model_name))
+    checkpoint = torch.load(os.path.join(args.output_dir, args.model_name))
     model.load_state_dict(checkpoint["model_state_dict"])
     classifier.load_state_dict(checkpoint["classifier_state_dict"])
 
@@ -502,8 +503,7 @@ if __name__ == "__main__":
     else:
         args = parser.parse_args_into_dataclasses()
 
-    wandb.init(project="seed", entity="clapika")
-    wandb.config({"model_name": "infotab"})
+    wandb.init(project="seed", entity="clapika", config={"model_name": "infotab"})
     print("Reading datasets")
     train_dataset = TableNLIData.from_jsonlines(args.train_file).to_infotab()
     dev_dataset = TableNLIData.from_jsonlines(args.dev_file).to_infotab()

@@ -186,12 +186,8 @@ def generate_negative_examples(df, sample, sentence):
                 new_sample = sample.copy()
                 new_sample["sentence"] = new_sentence
                 try:
-                    new_sample["table"] = (
-                        df.iloc[[most_dominant_row], :]
-                        .reset_index()
-                        .drop("index", axis=1)
-                        .to_json(orient="records")
-                    )
+                    new_sample["table"] = new_df.to_json(orient="records")
+
                 except:
                     print("Error", most_dominant_row, df)
 
@@ -215,12 +211,7 @@ def generate_negative_examples(df, sample, sentence):
                     print(e)
                     return None
                 new_df.iloc[x, y] = value
-                new_sample["table"] = (
-                    new_df.iloc[[most_dominant_row], :]
-                    .reset_index()
-                    .drop("index", axis=1)
-                    .to_json(orient="records")
-                )
+                new_sample["table"] = new_df.to_json(orient="records")
                 new_sample["sentence"] = sentence
                 return new_sample, most_dominant_row
         valid_choices.remove(i)
@@ -229,7 +220,6 @@ def generate_negative_examples(df, sample, sentence):
 
 
 def preprocess(sample):
-
     table = pd.DataFrame(json.loads(sample["table"]), index=None).fillna("")
     if len(table) == 0:
         sample["label"] = True

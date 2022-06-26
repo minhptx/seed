@@ -20,17 +20,6 @@ class InfotabExample:
         return self.__dict__
 
 
-@dataclass
-class TableNLIExample:
-    table: pd.DataFrame = field(default_factory=pd.DataFrame)
-    label: bool = False
-    sentence: str = ""
-    metadata: dict = field(default_factory=dict)
-
-    def get_row_values(self):
-        return self.table.iloc[0, :].values.tolist()
-
-
 class TableNLIData:
     def __init__(self, dataset):
         self.dataset = dataset
@@ -58,14 +47,19 @@ class TableNLIData:
         return self.dataset.map(filter)
 
     def to_infotab(self):
+        i = 0
+        def counter():
+            i += 1
+            return i
+            
         return self.dataset.map(
-            lambda example: InfotabExample(
-                table_id=id,
-                hypothesis=example.sentence,
-                table=example.table,
-                label=example.label,
-                title=example["table_page_tiltle"],
-            )
+            lambda example:{
+                "table_id": counter(),
+                "hypothesis": example.sentence,
+                "table": example.table,
+                "label": example.label,
+                "title": example["table_page_tiltle"],
+            }
         )
 
     def preprocess_with_func (self, func):
