@@ -187,7 +187,6 @@ def generate_negative_examples(df, sample, sentence):
                 new_sample["sentence"] = new_sentence
                 try:
                     new_sample["table"] = new_df.to_json(orient="records")
-
                 except:
                     print("Error", most_dominant_row, df)
 
@@ -223,6 +222,7 @@ def preprocess(sample):
     table = pd.DataFrame(json.loads(sample["table"]), index=None).fillna("")
     if len(table) == 0:
         sample["label"] = True
+        sample["note"] = ""
         sample["sentence"] = sample["sentence_annotations"][0]["original_sentence"]
         return sample, None
     sentences = [
@@ -237,7 +237,10 @@ def preprocess(sample):
     new_sample, _ = generate_negative_examples(table, sample, sentence)
     if new_sample is not None:
         new_sample["label"] = False
+        if "note" not in new_sample:
+            new_sample["note"] = ""
     sample["label"] = True
+    sample["note"] = ""
     sample["sentence"] = sentence
     return new_sample, sample
 

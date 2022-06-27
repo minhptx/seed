@@ -24,6 +24,10 @@ class TableNLIData:
     def __init__(self, dataset):
         self.dataset = dataset
 
+    def map(self, *args, **kwargs):
+        self.dataset = self.dataset.map(*args, **kwargs)
+        return self
+
     def from_jsonlines(file_path):
         # features = Features({"table": Value(dtype='string'), "sentence": Value(dtype="string"), "label": ClassLabel(num_classes=2, names=[True, False]), "highlighted_cells": Array2D(shape=(None, 2), dtype='int32')})
         return TableNLIData(load_dataset("json", data_files=file_path)).map(
@@ -44,7 +48,8 @@ class TableNLIData:
             except:
                 return obj
 
-        return self.dataset.map(filter)
+        self.dataset = self.dataset.map(filter)
+        return self
 
     def to_infotab(self):
         i = 0
@@ -62,7 +67,7 @@ class TableNLIData:
             }
         )
 
-    def preprocess_with_func (self, func):
+    def preprocess_with_func(self, func):
         return self.dataset.map(func)
 
     def __getitem__(self, i):

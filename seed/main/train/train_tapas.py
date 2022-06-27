@@ -45,8 +45,8 @@ class DataArguments:
     )
 
 def encode_tapas(item, tokenizer):
-    if len(table.columns) > 200:
-        table = table.iloc[:, :199]
+    if len(item.table.columns) > 200:
+        item.table = item.table.iloc[:, :199]
 
     encoding = tokenizer(
         table=item.table,
@@ -65,7 +65,7 @@ def encode_tapas(item, tokenizer):
 
 
 if __name__ == "__main__":
-    wandb.init(project="seed", entity="clapika", config={"model_name": "tapas"})
+    wandb.init(project="seed", entity="clapika", config={"model_name": "tapas"}, group="tapas")
     parser = HfArgumentParser((TrainingArguments, DataArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
@@ -84,8 +84,8 @@ if __name__ == "__main__":
 
     encode = partial(encode_tapas, tokenizer=tokenizer)
 
-    train_dataset = TableNLIData.from_jsonlines(data_args.train_file).preprocess_use_func(encode)
-    dev_dataset = TableNLIData.from_jsonlines(data_args.dev_file).preprocess_use_func(encode)
+    train_dataset = TableNLIData.from_jsonlines(data_args.train_file).filter_main_row().preprocess_with_func(encode)
+    dev_dataset = TableNLIData.from_jsonlines(data_args.dev_file).filter_main_row().preprocess_with_func(encode)
 
     start_epoch = 0
     num_epochs = args.num_train_epochs
