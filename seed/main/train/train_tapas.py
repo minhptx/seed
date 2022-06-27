@@ -45,12 +45,13 @@ class DataArguments:
     )
 
 def encode_tapas(item, tokenizer):
-    if len(item.table.columns) > 200:
-        item.table = item.table.iloc[:, :199]
+    table = pd.DataFrame(json.loads(item["table"]))
+    if len(table.columns) > 200:
+        table = table.iloc[:, :199]
 
     encoding = tokenizer(
-        table=item.table,
-        queries=str(item.sentence),
+        table=table,
+        queries=str(item['sentence']),
         truncation=True,
         padding=True,
         return_tensors="pt",
@@ -84,8 +85,21 @@ if __name__ == "__main__":
 
     encode = partial(encode_tapas, tokenizer=tokenizer)
 
-    train_dataset = TableNLIData.from_jsonlines(data_args.train_file).filter_main_row().preprocess_with_func(encode)
-    dev_dataset = TableNLIData.from_jsonlines(data_args.dev_file).filter_main_row().preprocess_with_func(encode)
+    print("Reading train data")
+
+    train_dataset = TableNLIData.from_jsonlines(data_args.train_file)
+    print("Filtering ...")
+    train_dataset = train_dataset.filter_main_row().preprocess_with_func(encode)
+    print("Filtering done")
+    train_dataset.save_to_disk(".cache/tapas_train")
+    # train_dataset = TableNLIData.load_from_disk(".cache/tapas_train")
+    print("Reading dev data")
+    dev_dataset = TableNLIData.from_jsonlines(data_args.dev_file)
+    print("Filtering ...")
+    dev_dataset = dev_dataset.filter_main_row().preprocess_with_func(encode)
+    print("Filtering done")
+    dev_dataset.save_to_disk(".cache/tapas_dev")
+
 
     start_epoch = 0
     num_epochs = args.num_train_epochs

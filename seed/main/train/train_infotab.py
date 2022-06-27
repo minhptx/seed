@@ -507,7 +507,7 @@ if __name__ == "__main__":
     print("Reading datasets")
     train_dataset = TableNLIData.from_jsonlines(args.train_file).to_infotab()
     dev_dataset = TableNLIData.from_jsonlines(args.dev_file).to_infotab()
-    test_dataset = TableNLIData.from_jsonlines(args.test_file).to_infotab()
+    test_dataset = dev_dataset
     datasets = [train_dataset, dev_dataset, test_dataset]
     for idx in range(3):
         print("Processing dataset ...")
