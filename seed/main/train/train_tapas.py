@@ -49,11 +49,9 @@ class DataArguments:
     )
 
 def encode_tapas(item, tokenizer):
-    print(item.keys())
     table = pd.DataFrame(json.loads(item["table"]))
     if len(table.columns) > 200:
         table = table.iloc[:, :199]
-
     encoding = tokenizer(
         table=table,
         queries=str(item['sentence']),
@@ -62,12 +60,8 @@ def encode_tapas(item, tokenizer):
         padding=True,
         return_tensors="pt",
     )
-
-    token_type_ids = encoding["token_type_ids"]
-    token_type_ids[token_type_ids > 255] = 255
-
     encoding = {key: val.squeeze(0) for key, val in encoding.items()}
-    encoding["labels"] = int(item["label"])
+    encoding["labels"] = torch.tensor([item["label"]]).long()
     return encoding
 
 
@@ -94,20 +88,19 @@ if __name__ == "__main__":
     print("Reading train data")
 
     train_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train")
-    print(len(train_dataset.dataset))
     print("Filtering ...")
     train_dataset = train_dataset.filter_main_row()
-    train_dataset = train_dataset.map(encode, num_proc=48, remove_columns=["table", "table_webpage_url", "table_page_title", "table_section_title", 'table_section_text', 'highlighted_cells', "example_id", "overlap_subset", "sentence_annotations", "sentence", "note", "label"])
+    train_dataset = train_dataset.map(encode, num_proc=48).with_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
     print("Filtering done")
     train_dataset.save_to_disk(".cache/tapas_train")
     # train_dataset = TableNLIData.load_from_disk(".cache/tapas_train")
     print("Reading dev data")
     dev_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train")
     print("Filtering ...")
-    dev_dataset = dev_dataset.filter_main_row().map(encode, num_proc=48, remove_columns=["table", "table_webpage_url", "table_page_title", "table_section_title", "table_section_text", "highlighted_cells", "example_id", "overlap_subset", "sentence_annotations", "sentence", "note", "label"])
+    dev_dataset = dev_dataset.filter_main_row().map(encode, num_proc=48).with_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    dev_dataset.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
     print("Filtering done")
     dev_dataset.save_to_disk(".cache/tapas_dev")
-
 
     start_epoch = 0
     num_epochs = training_args.num_train_epochs
@@ -137,7 +130,7 @@ if __name__ == "__main__":
         model.train()
         running_loss = 0.0
         for step, batch in enumerate(train_dataloader):
-            print(batch)
+            batch["token_type_ids"] = torch.cat(batch["token_type_ids"]).unsqueeze(0)
             outputs = model(**batch)
             loss = outputs.loss
             loss = loss / gradient_accumulation_steps
@@ -157,6 +150,7 @@ if __name__ == "__main__":
         all_labels = []
         for step, batch in enumerate(eval_dataloader):
             with torch.no_grad():
+                batch["token_type_ids"] = torch.cat(batch["token_type_ids"]).unsqueeze(0)
                 outputs = model(**batch)
             predictions = outputs.logits.argmax(dim=-1)
             metric.add_batch(

@@ -68,20 +68,16 @@ class TableNLIDataset():
         return self.map(tabularize)
 
     def to_infotab(self):
-        i = 0
-
-        def counter():
-            i += 1
-            return i
-
         return self.dataset.map(
-            lambda example: {
-                "table_id": counter(),
-                "hypothesis": example.sentence,
-                "table": example.table,
-                "label": example.label,
-                "title": example["table_page_tiltle"],
-            }
+            lambda example, idx: {
+                "table_id": idx,
+                'annotator_id': idx,
+                "hypothesis": example["sentence"],
+                "table": example["table"],
+                "label": example["label"],
+                "title": example["table_page_title"],
+            },
+            with_indices=True
         )
 
     def __getitem__(self, i):

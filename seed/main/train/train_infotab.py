@@ -7,14 +7,15 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 
 import sys
+from elasticsearch_dsl import Q
 import inflect
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import tqdm
 import wandb
+from tqdm import tqdm
 from seed.datasets.table_nli import TableNLIDataset
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
@@ -69,11 +70,9 @@ def load_sentences(file, skip_first=True, single_sentence=False):
                     bias experiment), and the NLI label for the pair
     """
     rows = []
-    print(file)
     df = pd.read_csv(file, sep="\t")
     for idx, row in df.iterrows():
         # Takes the relevant elements of the row necessary. Putting them in a dict,
-        print(row)
         if single_sentence:
             sample = {
                 "uid": row["annotator_id"],
@@ -98,17 +97,14 @@ def json_to_para(data, args):
     if args.rand_perm == 2:
         table_ids = []
         for index, row in enumerate(data):
-            row = row.to_dict()
             table_ids += [row["table_id"]]
         random.shuffle(table_ids)
         for index, row in enumerate(data):
-            row = row.to_dict()
             row["table_id"] = table_ids[index]
 
     if args.rand_perm == 1:
         table_ids = []
         for index, row in enumerate(data):
-            row = row.to_dict()
             table_ids += [row["table_id"]]
 
         set_of_orignal = list(set(table_ids))
@@ -127,8 +123,7 @@ def json_to_para(data, args):
             row["table_id"] = random_mapping_tableids[table_id]
 
     for index, row in enumerate(data):
-        row = row.to_dict()
-        obj = row["table"].to_dict(orient="records")
+        obj = pd.DataFrame(json.loads(row["table"])).to_dict(orient="records")
 
         if not obj:
             continue
@@ -144,7 +139,6 @@ def json_to_para(data, args):
 
         para = ""
 
-        print(obj)
         for key in obj:
             line = ""
             values = [obj[key]]
@@ -156,7 +150,6 @@ def json_to_para(data, args):
             except:
                 res = False
 
-            print(values)
 
             if (len(values) > 1) and res:
                 verb_use = "are"
@@ -216,12 +209,12 @@ def json_to_para(data, args):
                     )
 
         label = row["label"]
-        if row["label"] == "E":
+        if row["label"] == False:
             label = 0
-        if row["label"] == "N":
+        if row["label"] == True:
             label = 1
-        if row["label"] == "C":
-            label = 2
+        # if row["label"] == "C":
+        #     label = 2
 
         obj = {
             "index": index,
@@ -343,7 +336,7 @@ def test(model, classifier, data):
     return accuracy, gold_inds, predictions_inds
 
 
-def train(train_data, dev_data, test_data, args):
+def train_data(train_data, dev_data, test_data, args):
     """Train the transformer model on given data
     Inputs
     -------------
@@ -498,6 +491,17 @@ class DataArguments:
     model_type: str = field(
         default="roberta-base",
     )
+    cache_dir: str = field(
+        default=".cache/infotab/"
+    )
+    batch_size: int = field(
+        default=8,
+        metadata={"help": "The batch size for training"},
+    )
+    epochs: int = field(
+        default=10,
+        metadata={"help": "The number of epochs to train"},
+    )
 
 if __name__ == "__main__":
     parser = HfArgumentParser((DataArguments,))
@@ -508,16 +512,15 @@ if __name__ == "__main__":
 
     wandb.init(project="seed", entity="clapika", config={"model_name": "infotab"})
     print("Reading datasets")
-    train_dataset = TableNLIDataset.from_jsonlines(args.train_file, cache_dir=args.cache_dir).to_infotab()
-    dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file, cache_dir=args.cache_dir).to_infotab()
-    test_dataset = dev_dataset
-    datasets = [train_dataset, dev_dataset, test_dataset]
-    for idx in range(3):
+    train_dataset = TableNLIDataset.from_jsonlines(args.train_file, cache_dir=args.cache_dir).to_infotab()["train"]
+    dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file, cache_dir=args.cache_dir).to_infotab()["train"]
+    datasets = [train_dataset, dev_dataset]
+    for idx in range(2):
         print("Processing dataset ...")
         datasets[idx] = json_to_para(datasets[idx], args)
         datasets[idx] = preprocess_roberta(datasets[idx], args)
 
     print("Training ...")
-    train_dataset, dev_dataset, test_dataset = datasets
-    train(train_dataset, dev_dataset, test_dataset, args)
+    train_dataset, dev_dataset = datasets
+    train_data(train_dataset, dev_dataset, dev_dataset, args)
     
