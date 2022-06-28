@@ -23,7 +23,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from seed.datasets.table_nli import TableNLIData
+from seed.datasets.table_nli import TableNLIDataset
 
 metric = load_metric("accuracy")
 pd.set_option("mode.chained_assignment", "raise")
@@ -43,8 +43,13 @@ class DataArguments:
         default="data/test.json",
         metadata={"help": "The path to test data file"},
     )
+    cache_dir: str = field(
+        default=".cache/tapas/",
+        metadata={"help": "The path to cache dir"},
+    )
 
 def encode_tapas(item, tokenizer):
+    print(item.keys())
     table = pd.DataFrame(json.loads(item["table"]))
     if len(table.columns) > 200:
         table = table.iloc[:, :199]
@@ -52,6 +57,7 @@ def encode_tapas(item, tokenizer):
     encoding = tokenizer(
         table=table,
         queries=str(item['sentence']),
+        max_question_length=512,
         truncation=True,
         padding=True,
         return_tensors="pt",
@@ -71,9 +77,9 @@ if __name__ == "__main__":
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
 
-        args, data_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        training_args, data_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        args, data_args = parser.parse_args_into_dataclasses()
+        training_args, data_args = parser.parse_args_into_dataclasses()
     metric = load_metric("accuracy")
 
     tokenizer = TapasTokenizer.from_pretrained("google/tapas-base-finetuned-wtq")
@@ -87,22 +93,24 @@ if __name__ == "__main__":
 
     print("Reading train data")
 
-    train_dataset = TableNLIData.from_jsonlines(data_args.train_file)
+    train_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train")
+    print(len(train_dataset.dataset))
     print("Filtering ...")
-    train_dataset = train_dataset.filter_main_row().preprocess_with_func(encode)
+    train_dataset = train_dataset.filter_main_row()
+    train_dataset = train_dataset.map(encode, num_proc=48, remove_columns=["table", "table_webpage_url", "table_page_title", "table_section_title", 'table_section_text', 'highlighted_cells', "example_id", "overlap_subset", "sentence_annotations", "sentence", "note", "label"])
     print("Filtering done")
     train_dataset.save_to_disk(".cache/tapas_train")
     # train_dataset = TableNLIData.load_from_disk(".cache/tapas_train")
     print("Reading dev data")
-    dev_dataset = TableNLIData.from_jsonlines(data_args.dev_file)
+    dev_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train")
     print("Filtering ...")
-    dev_dataset = dev_dataset.filter_main_row().preprocess_with_func(encode)
+    dev_dataset = dev_dataset.filter_main_row().map(encode, num_proc=48, remove_columns=["table", "table_webpage_url", "table_page_title", "table_section_title", "table_section_text", "highlighted_cells", "example_id", "overlap_subset", "sentence_annotations", "sentence", "note", "label"])
     print("Filtering done")
     dev_dataset.save_to_disk(".cache/tapas_dev")
 
 
     start_epoch = 0
-    num_epochs = args.num_train_epochs
+    num_epochs = training_args.num_train_epochs
 
     train_dl = torch.utils.data.DataLoader(train_dataset, shuffle=False, batch_size=1)
     eval_dl = torch.utils.data.DataLoader(dev_dataset, shuffle=False, batch_size=1)
@@ -129,6 +137,7 @@ if __name__ == "__main__":
         model.train()
         running_loss = 0.0
         for step, batch in enumerate(train_dataloader):
+            print(batch)
             outputs = model(**batch)
             loss = outputs.loss
             loss = loss / gradient_accumulation_steps
@@ -163,7 +172,7 @@ if __name__ == "__main__":
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)
 
-        model.save_pretrained(os.path.join(args.output_dir, str(epoch + 1)))
+        model.save_pretrained(os.path.join(training_args.output_dir, str(epoch + 1)))
 
         wandb.log(
             {

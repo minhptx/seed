@@ -15,7 +15,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import tqdm
 import wandb
-from seed.datasets.table_nli import TableNLIData
+from seed.datasets.table_nli import TableNLIDataset
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
 
@@ -495,6 +495,9 @@ class DataArguments:
         default="temp/models/",
         metadata={"help": "The directory to save the data files"},
     )
+    model_type: str = field(
+        default="roberta-base",
+    )
 
 if __name__ == "__main__":
     parser = HfArgumentParser((DataArguments,))
@@ -505,8 +508,8 @@ if __name__ == "__main__":
 
     wandb.init(project="seed", entity="clapika", config={"model_name": "infotab"})
     print("Reading datasets")
-    train_dataset = TableNLIData.from_jsonlines(args.train_file).to_infotab()
-    dev_dataset = TableNLIData.from_jsonlines(args.dev_file).to_infotab()
+    train_dataset = TableNLIDataset.from_jsonlines(args.train_file, cache_dir=args.cache_dir).to_infotab()
+    dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file, cache_dir=args.cache_dir).to_infotab()
     test_dataset = dev_dataset
     datasets = [train_dataset, dev_dataset, test_dataset]
     for idx in range(3):
