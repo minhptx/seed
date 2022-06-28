@@ -7,6 +7,7 @@ from datasets import (
     Features,
     Sequence,
     Value,
+    Dataset,
     load_dataset,
     load_from_disk,
 )
@@ -28,27 +29,21 @@ class InfotabExample:
         return self.__dict__
 
 
-class TableNLIData:
+class TableNLIDataset():
     def __init__(self, dataset):
         self.dataset = dataset
+    
 
-    def map(self, *args, **kwargs):
-        self.dataset = self.dataset.map(*args, **kwargs)
-        return self
+    def __getattr__(self, item):
+        if item in self.__dict__:
+            return self.__dict__[item]
+        return getattr(self.dataset, item)
 
     @staticmethod
-    def from_jsonlines(file_path):
-        # features = Features({"table": Value(dtype='string'), "sentence": Value(dtype="string"), "label": ClassLabel(num_classes=2, names=[True, False]), "highlighted_cells": Array2D(shape=(None, 2), dtype='int32')})
-        return TableNLIData(load_dataset("json", data_files=file_path).filter(
+    def from_jsonlines(file_path, cache_dir=None, *args, **kwargs):
+        return TableNLIDataset(load_dataset("json", data_files=file_path, cache_dir=cache_dir, *args, **kwargs).filter(
                 lambda x: len(x["highlighted_cells"]) > 0
             ))
-
-    @staticmethod
-    def load_from_disk(file_path):
-        return TableNLIData(load_from_disk(file_path))
-
-    def save_to_disk(self, file_path):
-        self.dataset.save_to_disk(file_path)
 
     def filter_main_row(self):
         def filter(obj):
@@ -88,9 +83,6 @@ class TableNLIData:
                 "title": example["table_page_tiltle"],
             }
         )
-
-    def preprocess_with_func(self, func):
-        return self.dataset.map(func, num_proc=mp.cpu_count())
 
     def __getitem__(self, i):
         return self.data[i]
