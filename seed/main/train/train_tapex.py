@@ -202,49 +202,14 @@ def main():
         add_prefix_space=True
     )
 
-    train_df = pd.DataFrame(
-        list(
-            jsonlines.open(
-                data_args.train_file
-            )
-        ),
-        columns=["sentence", "table", "label", "table_page_title", "highlighted_cells"],
-    )
+    # train_dataset = TableNLIUltis.from_jsonlines(data_args.train_file)["train"].map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
+    # val_dataset = TableNLIUltis.from_jsonlines(data_args.dev_file)["train"].map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
 
+    # train_dataset.save_to_disk("temp/tapex/train")
+    # val_dataset.save_to_disk("temp/tapex/dev")
 
-    val_df = pd.DataFrame(
-        list(
-            jsonlines.open(
-                data_args.dev_file
-            )
-        ),
-        columns=["sentence", "table", "label", 'table_page_title', "highlighted_cells"],
-    )
-
-    # print(val_df.head())
-    # val_df = train_df.iloc[5000:10000]
-
-    # train_df = train_df.iloc[:5000]
-
-
-    # print(val_df.head())
-
-
-
-    # train_dataset = Dataset.from_pandas(train_df).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
-    # train_dataset = TableNLIUltis.filter_main_row(train_dataset)
-    # train_dataset = train_dataset.map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label"], num_proc=24)
-    # val_dataset = Dataset.from_pandas(val_df).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
-    # val_dataset = TableNLIUltis.filter_main_row(val_dataset)
-    # val_dataset = val_dataset.map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label"], num_proc=24)
-
-    # print(train_dataset, val_dataset)
-
-    # train_dataset.save_to_disk("data/totto_data/train_dataset")
-    # val_dataset.save_to_disk("data/totto_data/dev_dataset")
-
-    train_dataset = load_from_disk("data/totto_data/train_dataset")
-    val_dataset = load_from_disk("data/totto_data/dev_dataset")
+    train_dataset = load_from_disk("temp/tapex/train")
+    val_dataset = load_from_disk("temp/tapex/dev")
 
     model = BartForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
@@ -280,32 +245,34 @@ def main():
     )
 
     # Training
-    print("Training")
 
-    train_result = trainer.train()
-    metrics = train_result.metrics
-    max_train_samples = (
-        data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
-    )
-    metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+    if training_args.do_train:
+        logger.info("*** Training ***")
+        train_result = trainer.train()
+        metrics = train_result.metrics
+        max_train_samples = (
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+        )
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
-    trainer.save_model()  # Saves the tokenizer too for easy upload
+        trainer.save_model()  # Saves the tokenizer too for easy upload
 
-    trainer.log_metrics("train", metrics)
-    trainer.save_metrics("train", metrics)
-    trainer.save_state()
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
 
     # Evaluation
-    logger.info("*** Evaluate ***")
+    if training_args.do_eval:
+        logger.info("*** Evaluate ***")
 
-    metrics = trainer.evaluate(eval_dataset=val_dataset)
-    max_eval_samples = (
-        data_args.max_eval_samples if data_args.max_eval_samples is not None else len(val_dataset)
-    )
-    metrics["eval_samples"] = min(max_eval_samples, len(val_dataset))
+        metrics = trainer.evaluate(eval_dataset=val_dataset)
+        max_eval_samples = (
+            data_args.max_eval_samples if data_args.max_eval_samples is not None else len(val_dataset)
+        )
+        metrics["eval_samples"] = min(max_eval_samples, len(val_dataset))
 
-    trainer.log_metrics("eval", metrics)
-    trainer.save_metrics("eval", metrics)
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
     # metrics = trainer.evaluate(eval_dataset=train_dataset)
     # max_train_samples = (
@@ -332,11 +299,11 @@ def main():
                 item = label_list[item]
                 writer.write(f"{index}\t{item}\n")
                 writer.write(str(all_predictions[index]) + "\n")
-                writer.write(str(val_df.iloc[index]["label"]) + "\n")
-                writer.write(val_df.iloc[index]["sentence"] + "\n")
-                writer.write(val_df.iloc[index]["table"] + "\n")
-                result = (predictions[index] == val_df.iloc[index]["label"])
-                writer.write(val_df.iloc[index]["table"] + "\n")
+                writer.write(str(val_dataset[index]["label"]) + "\n")
+                writer.write(val_dataset[index]["sentence"] + "\n")
+                writer.write(val_dataset[index]["table"] + "\n")
+                result = (predictions[index] == val_dataset.iloc[index]["label"])
+                writer.write(val_dataset.iloc[index]["table"] + "\n")
                 writer.write("Result: " + str(result) + "\n")
 
 
