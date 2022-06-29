@@ -3,5 +3,5 @@
     "dev_file": "data/totto/test.jsonl",
     "test_file": "data/totto/test.jsonl",
     "num_train_epochs": 5,
-    "batch_size": 32,
+    "batch_size": 32
 }

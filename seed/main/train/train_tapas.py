@@ -2,9 +2,10 @@ from functools import partial
 import json
 import os
 import sys
+from pathlib import Path
 from dataclasses import dataclass, field
 
-import datasets
+from datasets import load_from_disk
 import jsonlines
 import pandas as pd
 import torch
@@ -14,6 +15,7 @@ from accelerate import Accelerator
 from datasets import Dataset, load_metric
 from tqdm import tqdm
 from transformers import (
+    DataCollatorWithPadding,
     HfArgumentParser,
     TapasConfig,
     TapasForSequenceClassification,
@@ -23,7 +25,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from seed.datasets.table_nli import TableNLIDataset
+from seed.datasets.table_nli import TableNLIUltis
 
 metric = load_metric("accuracy")
 pd.set_option("mode.chained_assignment", "raise")
@@ -47,18 +49,24 @@ class DataArguments:
         default=".cache/tapas/",
         metadata={"help": "The path to cache dir"},
     )
+    batch_size: int = field(
+        default=16,
+        metadata={"help": "The batch size"},
+    )
+
 
 def encode_tapas(item, tokenizer):
-    table = pd.DataFrame(json.loads(item["table"]))
-    if len(table.columns) > 200:
-        table = table.iloc[:, :199]
+    tables = [
+        pd.DataFrame(json.loads(x)).drop(columns=["index"]).iloc[:, :20]
+        for x in item["table"]
+    ]
 
     encoding = tokenizer(
-        table=table,
-        queries=str(item['sentence']),
-        max_question_length=512,
+        table=tables,
+        queries=item["sentence"][:100],
         truncation=True,
-        padding=True,
+        padding="max_length",
+        max_length=512,
         return_tensors="pt",
     )
     encoding = {key: val.squeeze(0) for key, val in encoding.items()}
@@ -68,12 +76,16 @@ def encode_tapas(item, tokenizer):
 
 
 if __name__ == "__main__":
-    wandb.init(project="seed", entity="clapika", config={"model_name": "tapas"}, group="tapas")
+    wandb.init(
+        project="seed", entity="clapika", config={"model_name": "tapas"}, group="tapas"
+    )
     parser = HfArgumentParser((TrainingArguments, DataArguments))
 
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
 
-        training_args, data_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        training_args, data_args = parser.parse_json_file(
+            json_file=os.path.abspath(sys.argv[1])
+        )
     else:
         training_args, data_args = parser.parse_args_into_dataclasses()
     metric = load_metric("accuracy")
@@ -89,26 +101,60 @@ if __name__ == "__main__":
 
     print("Reading train data")
 
-    train_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train[0:10]")
-    print("Filtering ...")
-    train_dataset = train_dataset.filter_main_row()
-    train_dataset = train_dataset.map(encode).with_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
-    print("Filtering done")
+    train_df = pd.DataFrame(
+        list(jsonlines.open(data_args.train_file)),
+        columns=["sentence", "table", "label", "table_page_title"],
+    )
+
+    dev_df = pd.DataFrame(
+        list(jsonlines.open(data_args.dev_file)),
+        columns=["sentence", "table", "label", "table_page_title"],
+    )
+
+    train_dataset = Dataset.from_pandas(train_df)
+    print("Filtering train data")
+    train_dataset = TableNLIUltis.filter_main_row(train_dataset, num_proc=48)
+    train_dataset = train_dataset.map(encode, num_proc=48, batched=True)
+    train_dataset = train_dataset.with_format(
+        type="torch",
+        columns=["input_ids", "token_type_ids", "attention_mask", "labels"],
+    )
+    print("Filtering done for train")
     train_dataset.save_to_disk(".cache/tapas_train")
-    # train_dataset = TableNLIData.load_from_disk(".cache/tapas_train")
-    # print("Reading dev data")
-    # dev_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train[0:100]")
-    # print("Filtering ...")
-    # dev_dataset = dev_dataset.filter_main_row().map(encode).with_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
-    # dev_dataset.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
-    # print("Filtering done")
-    # dev_dataset.save_to_disk(".cache/tapas_dev")
+
+    # train_dataset = load_from_disk(".cache/tapas_train")
+
+    print("Reading dev data")
+    dev_dataset = Dataset.from_pandas(dev_df)
+    print("Filtering dev data")
+    dev_dataset = TableNLIUltis.filter_main_row(dev_dataset, num_proc=48)
+    dev_dataset = dev_dataset.map(encode, num_proc=48, batched=True).with_format(
+        type="torch",
+        columns=["input_ids", "token_type_ids", "attention_mask", "labels"],
+    )
+    dev_dataset.set_format(
+        type="torch",
+        columns=["input_ids", "token_type_ids", "attention_mask", "labels"],
+    )
+    print("Filtering done for dev")
+    dev_dataset.save_to_disk(".cache/tapas_dev")
+
+    # dev_dataset = load_from_disk(".cache/tapas_dev")
 
     start_epoch = 0
     num_epochs = training_args.num_train_epochs
 
-    train_dl = torch.utils.data.DataLoader(train_dataset, shuffle=False, batch_size=1)
-    eval_dl = torch.utils.data.DataLoader(dev_dataset, shuffle=False, batch_size=1)
+    collator = DataCollatorWithPadding(tokenizer=tokenizer, padding=True)
+
+    train_dl = torch.utils.data.DataLoader(
+        train_dataset,
+        shuffle=False,
+        batch_size=data_args.batch_size,
+        collate_fn=collator,
+    )
+    eval_dl = torch.utils.data.DataLoader(
+        dev_dataset, shuffle=False, batch_size=data_args.batch_size, collate_fn=collator
+    )
 
     accelerator = Accelerator()
 
@@ -152,7 +198,9 @@ if __name__ == "__main__":
         all_labels = []
         for step, batch in enumerate(eval_dataloader):
             with torch.no_grad():
-                batch["token_type_ids"] = torch.cat(batch["token_type_ids"]).unsqueeze(0)
+                batch["token_type_ids"] = torch.cat(batch["token_type_ids"]).unsqueeze(
+                    0
+                )
                 outputs = model(**batch)
             predictions = outputs.logits.argmax(dim=-1)
             metric.add_batch(
@@ -168,7 +216,16 @@ if __name__ == "__main__":
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)
 
-        model.save_pretrained(os.path.join(training_args.output_dir, str(epoch + 1)))
+        folder_path = Path(training_args.output_dir) / str(epoch + 1)
+        folder_path.mkdir(parents=True, exist_ok=True)
+
+        accelerator.save(
+            {
+                "model": unwrapped_model.state_dict(),
+                "optimizer": optimizer.optimizer.state_dict(),
+            },
+            (folder_path / "model.bin"),
+        )
 
         wandb.log(
             {
