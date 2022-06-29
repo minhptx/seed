@@ -1,20 +1,13 @@
+import multiprocessing as mp
 from dataclasses import dataclass, field
-import functools
 from pathlib import Path
-from datasets import (
-    Array2D,
-    ClassLabel,
-    Features,
-    Sequence,
-    Value,
-    Dataset,
-    load_dataset,
-    load_from_disk,
-)
 
+import jsonlines
 import orjson as json
 import pandas as pd
-import multiprocessing as mp
+
+from datasets import Dataset, load_dataset
+
 
 @dataclass
 class InfotabExample:
@@ -29,10 +22,9 @@ class InfotabExample:
         return self.__dict__
 
 
-class TableNLIUltis():
+class TableNLIUltis:
     def __init__(self, dataset):
         self.dataset = dataset
-    
 
     def __getattr__(self, item):
         if item in self.__dict__:
@@ -40,11 +32,29 @@ class TableNLIUltis():
         return getattr(self.dataset, item)
 
     @staticmethod
-    def from_jsonlines(file_path, cache_dir=None, *args, **kwargs):
-        return load_dataset("json", data_files=file_path, cache_dir=cache_dir, *args, **kwargs).filter(
-                lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]"
-            )
-    
+    def from_jsonlines(
+        file_path,
+        cache_dir=None,
+        filter_row=True,
+        columns=["sentence", "table", "label", "table_page_title", "highlighted_cells"],
+        output_format="tapex",
+        *args,
+        **kwargs
+    ):
+        df = pd.DataFrame(
+            list(jsonlines.open(file_path)),
+            columns=columns,
+        )
+        dataset = Dataset.from_pandas(df)
+        dataset = load_dataset(
+            "json", data_files=file_path, cache_dir=cache_dir, *args, **kwargs
+        ).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
+        if filter_row:
+            dataset = TableNLIUltis.filter_main_row(dataset)
+        if output_format == "infotab":
+            dataset = TableNLIUltis.to_infotab(dataset)
+        return dataset
+
     @staticmethod
     def filter_main_row(dataset, *args, **kwargs):
         def filter(obj):
@@ -68,18 +78,19 @@ class TableNLIUltis():
         def tabularize(item):
             item["df"] = pd.DataFrame(json.loads(item["table"]))
             return item
+
         return dataset.map(tabularize, *args, **kwargs)
 
     @staticmethod
     def to_infotab(dataset):
-        return dataset.dataset.map(
+        return dataset.map(
             lambda example, idx: {
                 "table_id": idx,
-                'annotator_id': idx,
+                "annotator_id": idx,
                 "hypothesis": example["sentence"],
                 "table": example["table"],
                 "label": example["label"],
                 "title": example["table_page_title"],
             },
-            with_indices=True
+            with_indices=True,
         )
