@@ -19,6 +19,7 @@ from tqdm import tqdm
 from seed.datasets.table_nli import TableNLIDataset
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
+from accelerate import Accelerator
 
 inflect = inflect.engine()
 
@@ -358,6 +359,8 @@ def train_data(train_data, dev_data, test_data, args):
     train_labs = torch.tensor(train_data["labels"]).cuda()
     train_ids = torch.tensor(train_data["uid"]).cuda()
 
+    accelerator = Accelerator()
+
     # Intialize Models
     model = AutoModel.from_pretrained(args.model_type).cuda()
     args.embed_size = model.config.hidden_size
@@ -371,10 +374,13 @@ def train_data(train_data, dev_data, test_data, args):
     )
     loader = DataLoader(dataset, batch_size=args.batch_size)
 
+
     # Intialize the optimizer and loss functions
     params = list(model.parameters()) + list(classifier.parameters())
     optimizer = optim.Adagrad(params, lr=0.0001)
     loss_fn = nn.CrossEntropyLoss()
+
+    model, optimizer, loader = accelerator.prepare(model, optimizer, loader)
 
     for ep in range(args.epochs):
         epoch_loss = 0
@@ -495,7 +501,7 @@ class DataArguments:
         default=".cache/infotab/"
     )
     batch_size: int = field(
-        default=8,
+        default=1,
         metadata={"help": "The batch size for training"},
     )
     epochs: int = field(
@@ -511,16 +517,21 @@ if __name__ == "__main__":
         args = parser.parse_args_into_dataclasses()
 
     wandb.init(project="seed", entity="clapika", config={"model_name": "infotab"})
-    print("Reading datasets")
-    train_dataset = TableNLIDataset.from_jsonlines(args.train_file, cache_dir=args.cache_dir).to_infotab()["train"]
-    dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file, cache_dir=args.cache_dir).to_infotab()["train"]
-    datasets = [train_dataset, dev_dataset]
-    for idx in range(2):
-        print("Processing dataset ...")
-        datasets[idx] = json_to_para(datasets[idx], args)
-        datasets[idx] = preprocess_roberta(datasets[idx], args)
+    # print("Reading datasets")
+    # train_dataset = TableNLIDataset.from_jsonlines(args.train_file, cache_dir=args.cache_dir).to_infotab()["train"]
+    # dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file, cache_dir=args.cache_dir).to_infotab()["train"]
+    # datasets = [train_dataset, dev_dataset]
+    # for idx in range(2):
+    #     print("Processing dataset ...")
+    #     datasets[idx] = json_to_para(datasets[idx], args)
+    #     datasets[idx] = preprocess_roberta(datasets[idx], args)
 
-    print("Training ...")
-    train_dataset, dev_dataset = datasets
+    # print("Training ...")
+    # train_dataset, dev_dataset = datasets
+    # json.dump(train_dataset, open("temp/infotab/train.json", "w"))
+    # json.dump(dev_dataset, open("temp/infotab/dev.json", "w"))
+
+    train_dataset = json.load(open("temp/infotab/train.json", "r"))
+    dev_dataset = json.load(open("temp/infotab/dev.json", "r"))
     train_data(train_dataset, dev_dataset, dev_dataset, args)
     

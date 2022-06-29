@@ -52,6 +52,7 @@ def encode_tapas(item, tokenizer):
     table = pd.DataFrame(json.loads(item["table"]))
     if len(table.columns) > 200:
         table = table.iloc[:, :199]
+
     encoding = tokenizer(
         table=table,
         queries=str(item['sentence']),
@@ -61,6 +62,7 @@ def encode_tapas(item, tokenizer):
         return_tensors="pt",
     )
     encoding = {key: val.squeeze(0) for key, val in encoding.items()}
+    encoding["token_type_ids"] = encoding["token_type_ids"].long()
     encoding["labels"] = torch.tensor([item["label"]]).long()
     return encoding
 
@@ -87,20 +89,20 @@ if __name__ == "__main__":
 
     print("Reading train data")
 
-    train_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train")
+    train_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train[0:10]")
     print("Filtering ...")
     train_dataset = train_dataset.filter_main_row()
-    train_dataset = train_dataset.map(encode, num_proc=48).with_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    train_dataset = train_dataset.map(encode).with_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
     print("Filtering done")
     train_dataset.save_to_disk(".cache/tapas_train")
     # train_dataset = TableNLIData.load_from_disk(".cache/tapas_train")
-    print("Reading dev data")
-    dev_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train")
-    print("Filtering ...")
-    dev_dataset = dev_dataset.filter_main_row().map(encode, num_proc=48).with_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
-    dev_dataset.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
-    print("Filtering done")
-    dev_dataset.save_to_disk(".cache/tapas_dev")
+    # print("Reading dev data")
+    # dev_dataset = TableNLIDataset.from_jsonlines(data_args.dev_file, cache_dir=data_args.cache_dir, split="train[0:100]")
+    # print("Filtering ...")
+    # dev_dataset = dev_dataset.filter_main_row().map(encode).with_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    # dev_dataset.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", "labels"])
+    # print("Filtering done")
+    # dev_dataset.save_to_disk(".cache/tapas_dev")
 
     start_epoch = 0
     num_epochs = training_args.num_train_epochs

@@ -54,7 +54,7 @@ class TableNLIDataset():
             try:
                 obj["table"] = (
                     obj["table"].iloc[[most_dominant_row], cols].reset_index()
-                )
+                ).to_json(orient="records")
                 return obj
             except:
                 return obj
