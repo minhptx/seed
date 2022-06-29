@@ -4,5 +4,6 @@
     "dev_file": "data/totto/totto_dev_data_augmented.jsonl",
     "test_file": "data/totto/totto_dev_data_augmented.jsonl",
     "do_train": true,
-    "do_eval": true
+    "do_eval": true,
+    "per_device_train_batch_size": 32
 }

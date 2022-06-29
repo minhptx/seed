@@ -202,49 +202,14 @@ def main():
         add_prefix_space=True
     )
 
-    train_df = pd.DataFrame(
-        list(
-            jsonlines.open(
-                data_args.train_file
-            )
-        ),
-        columns=["sentence", "table", "label", "table_page_title", "highlighted_cells"],
-    )
-
-
-    val_df = pd.DataFrame(
-        list(
-            jsonlines.open(
-                data_args.dev_file
-            )
-        ),
-        columns=["sentence", "table", "label", 'table_page_title', "highlighted_cells"],
-    )
-
-    # print(val_df.head())
-    # val_df = train_df.iloc[5000:10000]
-
-    # train_df = train_df.iloc[:5000]
-
-
-    # print(val_df.head())
-
-
-
-    # train_dataset = Dataset.from_pandas(train_df).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
-    # train_dataset = TableNLIUltis.filter_main_row(train_dataset)
-    # train_dataset = train_dataset.map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label"], num_proc=24)
-    # val_dataset = Dataset.from_pandas(val_df).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
-    # val_dataset = TableNLIUltis.filter_main_row(val_dataset)
-    # val_dataset = val_dataset.map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label"], num_proc=24)
-
-    # print(train_dataset, val_dataset)
+    train_dataset = TableNLIUltis.from_jsonlines(data_args.train_file)
+    val_dataset = TableNLIUltis.from_jsonlines(data_args.dev_file)
 
     # train_dataset.save_to_disk("data/totto_data/train_dataset")
     # val_dataset.save_to_disk("data/totto_data/dev_dataset")
 
-    train_dataset = load_from_disk("data/totto_data/train_dataset")
-    val_dataset = load_from_disk("data/totto_data/dev_dataset")
+    train_dataset = load_from_disk("temp/tapex/train_dataset")
+    val_dataset = load_from_disk("temp/tapex/dev_dataset")
 
     model = BartForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
