@@ -1,0 +1,5 @@
+outs:
+- md5: 79794eebde9b383800f2cfc7caa505da.dir
+  size: 612678608
+  nfiles: 6
+  path: temp

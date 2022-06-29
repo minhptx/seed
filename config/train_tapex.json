@@ -2,5 +2,7 @@
     "output_dir": "models/tapex",
     "train_file": "data/totto/totto_train_data_augmented.jsonl",
     "dev_file": "data/totto/totto_dev_data_augmented.jsonl",
-    "test_file": "data/totto/totto_dev_data_augmented.jsonl"
+    "test_file": "data/totto/totto_dev_data_augmented.jsonl",
+    "do_train": true,
+    "do_eval": true
 }

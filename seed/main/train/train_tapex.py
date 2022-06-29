@@ -30,7 +30,7 @@ from typing import Optional
 import jsonlines
 import numpy as np
 import pandas as pd
-from datasets import Dataset, load_dataset
+from datasets import Dataset, load_dataset, load_from_disk
 from transformers import (
     AutoConfig,
     BartForSequenceClassification,
@@ -231,17 +231,20 @@ def main():
 
 
 
-    train_dataset = Dataset.from_pandas(train_df).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
-    train_dataset = TableNLIUltis.filter_main_row(train_dataset)
-    train_dataset = train_dataset.map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label"], num_proc=24)
-    val_dataset = Dataset.from_pandas(val_df).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
-    val_dataset = TableNLIUltis.filter_main_row(val_dataset)
-    val_dataset = val_dataset.map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label"], num_proc=24)
+    # train_dataset = Dataset.from_pandas(train_df).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
+    # train_dataset = TableNLIUltis.filter_main_row(train_dataset)
+    # train_dataset = train_dataset.map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label"], num_proc=24)
+    # val_dataset = Dataset.from_pandas(val_df).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
+    # val_dataset = TableNLIUltis.filter_main_row(val_dataset)
+    # val_dataset = val_dataset.map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label"], num_proc=24)
 
-    print(train_dataset, val_dataset)
+    # print(train_dataset, val_dataset)
 
-    train_dataset.save_to_disk("data/totto_data/train_dataset")
-    val_dataset.save_to_disk("data/totto_data/dev_dataset")
+    # train_dataset.save_to_disk("data/totto_data/train_dataset")
+    # val_dataset.save_to_disk("data/totto_data/dev_dataset")
+
+    train_dataset = load_from_disk("data/totto_data/train_dataset")
+    val_dataset = load_from_disk("data/totto_data/dev_dataset")
 
     model = BartForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
