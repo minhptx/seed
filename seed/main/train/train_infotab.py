@@ -19,6 +19,7 @@ from tqdm import tqdm
 from seed.datasets.table_nli import TableNLIDataset
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
+import orjson as json
 
 inflect = inflect.engine()
 
@@ -511,16 +512,20 @@ if __name__ == "__main__":
         args = parser.parse_args_into_dataclasses()
 
     wandb.init(project="seed", entity="clapika", config={"model_name": "infotab"})
-    print("Reading datasets")
-    train_dataset = TableNLIDataset.from_jsonlines(args.train_file, cache_dir=args.cache_dir).to_infotab()["train"]
-    dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file, cache_dir=args.cache_dir).to_infotab()["train"]
-    datasets = [train_dataset, dev_dataset]
-    for idx in range(2):
-        print("Processing dataset ...")
-        datasets[idx] = json_to_para(datasets[idx], args)
-        datasets[idx] = preprocess_roberta(datasets[idx], args)
+    # print("Reading datasets")
+    # train_dataset = TableNLIDataset.from_jsonlines(args.train_file, cache_dir=args.cache_dir).to_infotab()["train"]
+    # dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file, cache_dir=args.cache_dir).to_infotab()["train"]
+    # datasets = [train_dataset, dev_dataset]
+    # for idx in range(2):
+    #     print("Processing dataset ...")
+    #     datasets[idx] = json_to_para(datasets[idx], args)
+    #     datasets[idx] = preprocess_roberta(datasets[idx], args)
 
-    print("Training ...")
-    train_dataset, dev_dataset = datasets
+    # print("Training ...")
+    # train_dataset, dev_dataset = datasets
+    # json.dump(train_dataset, open("temp/infotab/train.json", "w"))
+    # json.dump(dev_dataset, open("temp/infotab/dev.json", "w"))
+    train_dataset = json.load(open("temp/infotab/train.json", "r"))
+    dev_dataset = json.load(open("temp/infotab/dev.json", "r"))
     train_data(train_dataset, dev_dataset, dev_dataset, args)
     
