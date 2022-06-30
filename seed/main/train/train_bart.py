@@ -144,12 +144,10 @@ class ModelArguments:
 
 
 def process_table(items, tokenizer):
-    tables = [pd.DataFrame(json.loads(x)).iloc[:, :200].astype(str) for x in items["table"]]
-    for idx, title in enumerate(items["table_page_title"]):
-        tables[idx]["title"] = title
+    tabularized_sentences = [f"{item[0]}{tokenizer.sep_token}{tokenizer.sep_token.join(item[1])}{tokenizer.sep_token}{item[2]}" for item in zip(items["header"], items["table"], items["sentence"])]
     encoding = tokenizer(
-        table=tables,
-        query=items["sentence"],
+        tabularized_sentences,
+        items["extraction"],
         truncation=True,
         padding=True,
     )

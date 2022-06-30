@@ -159,9 +159,9 @@ def generate_negative_examples(df, sample, sentence):
         3: replace_table_named_entities,
         4: replace_table_numbers,
     }
-
-
-    if sample["table_page_title"] in title2text:
+    if args.test_set:
+        valid_choices = [3, 4]
+    elif sample["table_page_title"] in title2text:
         doc = title2text[sample["table_page_title"]]
         valid_choices = [0, 1, 2, 3, 4]
     else:
@@ -262,10 +262,12 @@ class Argument:
     filter: bool = field(
         default=False, metadata={"help": "Filter out samples with no highlighted cells"}
     )
+    test_set: bool = field(
+        default=False, metadata={"help": "Is this a test set?"}
+    )
 
 
 if __name__ == "__main__":
-    print("checkking")
     parser = HfArgumentParser(Argument)
     args = parser.parse_args()
 

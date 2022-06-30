@@ -6,7 +6,7 @@ import orjson as json
 
 class DPRRetriever:
     def __init__(self, mode="hybrid") -> None:
-        self.ssearcher = LuceneSearcher.from_prebuilt_index("enwiki_paragraphs")
+        self.ssearcher = LuceneSearcher.from_prebuilt_index("enwiki-paragraphs")
         self.encoder = DprQueryEncoder("facebook/dpr-question_encoder-multiset-base")
         self.dsearcher = FaissSearcher.from_prebuilt_index(
             "wikipedia-dpr-multi-bf", self.encoder

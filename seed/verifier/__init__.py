@@ -1,7 +1,8 @@
+from .tapex import TapexVerifier
 from .infotab import InfotabVerifier
 from .tapas import TapasVerifier
 
-class VerifierFactory:
+class Verifier:
     def __init__(self) -> None:
         pass
 
@@ -11,6 +12,8 @@ class VerifierFactory:
             class_instance = InfotabVerifier
         elif verifier_model == "tapas":
             class_instance = TapasVerifier
+        elif verifier_model == "tapex":
+            class_instance = TapexVerifier
 
         return class_instance(*args, **kwargs)
 
