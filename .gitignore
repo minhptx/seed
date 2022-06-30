@@ -2,9 +2,6 @@ data/
 wandb/
 /.cache
 /data
-<<<<<<< HEAD
 models/
-=======
-models
->>>>>>> 500757c397a2fae1ca392989ef4ccfc6266201a0
+!models/tapex/
 /temp
