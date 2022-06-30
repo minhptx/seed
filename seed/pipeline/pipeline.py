@@ -1,14 +1,11 @@
-from seed.retriever import Retriever
-from seed.verifier import Verifier
-from seed.extractor import Extractor
 from blingfire import text_to_sentences
 
 
 class Pipeline:
-    def __init__(self, retriever=None, verifier=None, extractor=None) -> None:
-        self.retriever = Retriever.get(retriever if retriever else "dpr")
-        self.verifier = Verifier.get(verifier if verifier else "tapex")
-        self.extractor = Extractor.get(extractor if extractor else "unifiedqa")
+    def __init__(self, retriever, verifier, extractor) -> None:
+        self.retriever = retriever
+        self.verifier = verifier
+        self.extractor = extractor
 
     def run(self, df):
         query = " and ".join([f"{x} is {y}" for x, y in df.to_dict(orient="records")[0].items()])

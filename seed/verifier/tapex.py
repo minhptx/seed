@@ -4,7 +4,7 @@ from nltk import wordpunct_tokenize
 
 class TapexVerifier:
     def __init__(self) -> None:
-        self.model = AutoModel.from_pretrained("models/tapex/checkpoint-10000")
+        self.model = AutoModel.from_pretrained("../../models/tapex/checkpoint-10000")
         self.tokenizer = AutoTokenizer.from_pretrained("microsoft/tapex-base")
 
     def text_similarity(self, doc, table):
