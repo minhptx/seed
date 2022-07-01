@@ -8,8 +8,9 @@ class Pipeline:
         self.extractor = extractor
 
     def run(self, df):
-        query = " and ".join([f"{x} is {y}" for x, y in df.to_dict(orient="records")[0].items()])
-        documents = self.retriever.retrieve(query)
+        query = " and ".join([f"{x} is {y}" for x, y in df.to_dict(orient="records")[0].items() if all([not c.isdigit() for c in y])])
+        print(query)        
+        documents = self.retriever.search(query)
 
         relevant_sentences = []
 
@@ -18,8 +19,8 @@ class Pipeline:
             text = document["text"]
             sentences = text_to_sentences(text).split("\n")
             for sentence in sentences:
-
-                is_verified, prob = self.verifier.verify(document, query)
+                print(sentence, df)
+                is_verified, prob = self.verifier.verify(sentence, df)
                 relevant_sentences.append({"title": title, "text": sentence, "is_verified": is_verified, "prob": prob})
 
         erroneous_cells = []

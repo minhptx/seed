@@ -6,7 +6,7 @@ import orjson as json
 
 class DPRRetriever:
     def __init__(self, mode="hybrid") -> None:
-        self.ssearcher = LuceneSearcher.from_prebuilt_index("enwiki-paragraphs")
+        self.ssearcher = LuceneSearcher.from_prebuilt_index("wikipedia-dpr")
         self.encoder = DprQueryEncoder("facebook/dpr-question_encoder-multiset-base")
         self.dsearcher = FaissSearcher.from_prebuilt_index(
             "wikipedia-dpr-multi-bf", self.encoder
@@ -25,9 +25,12 @@ class DPRRetriever:
 
     def search(self, query: str, k: int = 10) -> list:
         docs = self.searcher.search(query, k)
+        result = []
         if self.mode == "sprase":
             for doc in docs:
-                yield self.process_content(doc.raw)
+                result.append(self.process_content(doc.raw))
         elif self.mode == "hybrid":
             for doc in docs:
-                yield self.process_content(self.ssearcher.doc(doc.docid).raw())
+                print(doc)
+                result.append(self.process_content(self.ssearcher.doc(int(doc.docid)).raw()))
+        return result

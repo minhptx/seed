@@ -1,4 +1,4 @@
-from transformers import AutoModel, AutoTokenizer
+from transformers import T5ForConditionalGeneration, T5Tokenizer
 from flair.data import Sentence
 from flair.models import SequenceTagger
 import dateparser
@@ -8,8 +8,8 @@ from number_parser import parse
 
 class UQAExtractor:
     def __init__(self) -> None:
-        self.model = AutoModel.from_pretrained("allenai/unifiedqa-v2-t5-11b-1251000")
-        self.tokenizer = AutoTokenizer.from_pretrained("allenai/unifiedqa-v2-t5-11b-1251000")
+        self.model = T5ForConditionalGeneration.from_pretrained("allenai/unifiedqa-v2-t5-base-1251000")
+        self.tokenizer = T5Tokenizer.from_pretrained("allenai/unifiedqa-v2-t5-base-1251000")
         self.tagger = SequenceTagger.load('ner')
 
     def check_date(self, values):
@@ -80,4 +80,5 @@ class UQAExtractor:
         
     def compare(self, sentence, value, df, column):
         prediction = self.extract(sentence, df, column)
-        return prediction.lower() == value.lower()
+        print(prediction)
+        return prediction[0].lower() == value.lower()
