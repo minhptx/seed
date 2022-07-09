@@ -1,9 +1,8 @@
-{
+{   "output_dir": "models/tapas_infotab",     
     "train_file": "data/infotab/processed/train.jsonl",
     "dev_file": "data/infotab/processed/dev.jsonl",
     "test_file": "data/infotab/processed/test_alpha1.jsonl",
-    "output_dir": "models/infotab-infotab/",
-    "batch_size": 4,
-    "epochs": 20,
-    "num_labels": 3
+    "num_train_epochs": 20,
+    "num_labels": 3,
+    "batch_size": 24
 }

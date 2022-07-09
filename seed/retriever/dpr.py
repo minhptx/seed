@@ -31,6 +31,6 @@ class DPRRetriever:
                 result.append(self.process_content(doc.raw))
         elif self.mode == "hybrid":
             for doc in docs:
-                print(doc)
-                result.append(self.process_content(self.ssearcher.doc(int(doc.docid)).raw()))
+                print(self.ssearcher.doc(doc.docid).raw())
+                result.append(self.process_content(self.ssearcher.doc(doc.docid).raw()))
         return result

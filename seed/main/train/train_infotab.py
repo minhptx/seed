@@ -16,14 +16,12 @@ import torch.nn.functional as F
 import torch.optim as optim
 import wandb
 from tqdm import tqdm
-from seed.datasets.table_nli import TableNLIDataset
+from seed.datasets.table_nli import TableNLIUltis
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
-<<<<<<< HEAD
 from accelerate import Accelerator
-=======
-import orjson as json
->>>>>>> 697db6151c5e3290d26aae804bf1c695feda26fc
+from pathlib import Path
+import datetime
 
 inflect = inflect.engine()
 
@@ -51,11 +49,12 @@ class FeedForward(nn.Module):
         return output
 
 def is_date(string):
-    match = re.search("\d{4}-\d{2}-\d{2}", string)
-    if match:
-        return True
-    else:
-        return False
+	match = re.search('\d{4}-\d{2}-\d{2}', string)
+	if match:
+		date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
+		return True
+	else:
+		return False
 
 
 def load_sentences(file, skip_first=True, single_sentence=False):
@@ -128,35 +127,30 @@ def json_to_para(data, args):
             row["table_id"] = random_mapping_tableids[table_id]
 
     for index, row in enumerate(data):
-        obj = pd.DataFrame(json.loads(row["table"])).to_dict(orient="records")
+        obj = json.loads(row["table"])
 
         if not obj:
             continue
         obj = obj[0]
-        obj["title"] = row['title']
         try:
-            title = obj["title"][0]
+            title = row["title"]
         except KeyError as e:
-            print(e)
+            print(row)
             exit()
 
         del obj["title"]
 
         para = ""
 
+        if "index" in obj:
+            obj.pop("index")
+
         for key in obj:
             line = ""
-            values = [obj[key]]
-            if isinstance(key, tuple):
-                key = " ".join(tuple)
-
-            try:
-                res = inflect.plural_noun(key)
-            except:
-                res = False
+            values = obj[key]
 
 
-            if (len(values) > 1) and res:
+            if (len(values) > 1) and (inflect.plural_noun(key)):
                 verb_use = "are"
                 if is_date("".join(values)):
                     para += title + " was " + str(key) + " on "
@@ -174,7 +168,7 @@ def json_to_para(data, args):
                         print(row)
                         print(key)
                         print(title)
-                        continue
+                        exit()
                 for value in values[:-1]:
                     para += value + ", "
                     line += value + ", "
@@ -214,12 +208,6 @@ def json_to_para(data, args):
                     )
 
         label = row["label"]
-        if row["label"] == False:
-            label = 0
-        if row["label"] == True:
-            label = 1
-        # if row["label"] == "C":
-        #     label = 2
 
         obj = {
             "index": index,
@@ -250,7 +238,6 @@ def preprocess_roberta(data, args):
         # If there are more than 504 sub-word tokens, sub-word tokens will be dropped from
         # the end of the longest sequence in the two (most likely the premise)
         if args.single_sentence:
-            pt_dict["hypothesis"] = str(pt_dict["hypothesis"])
             encoded_inps = new_tokenizer(
                 pt_dict["hypothesis"],
                 padding="max_length",
@@ -258,8 +245,6 @@ def preprocess_roberta(data, args):
                 max_length=504,
             )
         else:
-            pt_dict["hypothesis"] = str(pt_dict["hypothesis"])
-            pt_dict["premise"] = str(pt_dict["premise"])
             encoded_inps = new_tokenizer(
                 pt_dict["premise"],
                 pt_dict["hypothesis"],
@@ -369,7 +354,7 @@ def train_data(train_data, dev_data, test_data, args):
     model = AutoModel.from_pretrained(args.model_type).cuda()
     args.embed_size = model.config.hidden_size
     classifier = FeedForward(
-        args.embed_size, int(args.embed_size / 2), 2
+        args.embed_size, int(args.embed_size / 2), args.num_labels
     ).cuda()
 
     # Creating the training dataloaders
@@ -431,7 +416,8 @@ def train_data(train_data, dev_data, test_data, args):
             + "_"
             + str(dev_acc))
         )
-
+        json.dump({"epoch": ep + 1,"loss": normalized_epoch_loss, "dev_accuracy": dev_acc, "dev_gold": dev_gold, "dev_pred": dev_pred, 
+        "test_accuracy": test_acc, "test_gold": test_gold, "test_pred": test_pred}, (Path(args.output_dir) / f"model_{ep + 1}.json").open("w"))
         wandb.log({"epoch": ep + 1,"loss": normalized_epoch_loss, "dev_accuracy": dev_acc, "dev_gold": dev_gold, "dev_pred": dev_pred, 
         "test_accuracy": test_acc, "test_gold": test_gold, "test_pred": test_pred})
 
@@ -512,6 +498,10 @@ class DataArguments:
         default=10,
         metadata={"help": "The number of epochs to train"},
     )
+    num_labels: int = field(
+        default=2,
+        metadata={"help": "The number of labels"},
+    )
 
 if __name__ == "__main__":
     parser = HfArgumentParser((DataArguments,))
@@ -520,10 +510,13 @@ if __name__ == "__main__":
     else:
         args = parser.parse_args_into_dataclasses()
 
-    wandb.init(project="seed", entity="clapika", config={"model_name": "infotab"})
+    wandb.init(project="seed", entity="clapika", name="infotab")
     # print("Reading datasets")
-    train_dataset = TableNLIDataset.from_jsonlines(args.train_file, cache_dir=args.cache_dir).to_infotab()
-    dev_dataset = TableNLIDataset.from_jsonlines(args.dev_file, cache_dir=args.cache_dir).to_infotab()
+    train_dataset = TableNLIUltis.from_jsonlines(args.train_file, cache_dir=args.cache_dir, output_format="infotab")["train"]
+    dev_dataset = TableNLIUltis.from_jsonlines(args.dev_file, cache_dir=args.cache_dir, output_format="infotab")["train"]
+
+    train_dataset.save_to_disk("temp/infotab/train")
+    dev_dataset.save_to_disk("temp/infotab/dev")
     datasets = [train_dataset, dev_dataset]
     for idx in range(2):
         print("Processing dataset ...")

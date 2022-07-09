@@ -1,0 +1,19 @@
+{
+    "output_dir": "models/bart-infotab",
+    "train_file": "data/infotab/processed/train.jsonl",
+    "dev_file": "data/infotab/processed/dev.jsonl",
+    "test_file": "data/infotab/processed/test_alpha1.jsonl",
+    "do_train": true,
+    "do_eval": true,
+    "per_device_train_batch_size": 4,
+    "per_device_eval_batch_size": 4,
+    "model_name_or_path": "microsoft/tapex-base",
+    "eval_accumulation_steps": 10,
+    "num_train_epochs": 10,
+    "evaluation_strategy": "epoch",
+    "learning_rate": 0.000005,
+    "weight_decay": 0.0,
+    "num_labels": 3,
+    "report_to": "wandb",
+    "run_name": "tapex-infotab"
+}

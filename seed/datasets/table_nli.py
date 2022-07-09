@@ -64,9 +64,7 @@ class TableNLIUltis:
             cols = [x[1] for x in obj["highlighted_cells"] if x[0] == most_dominant_row]
 
             try:
-                obj["table"] = (
-                    table.iloc[[most_dominant_row], cols].reset_index()
-                ).to_json(orient="records")
+                obj["table"] = table.iloc[[most_dominant_row], cols].reset_index().to_json(orient="records")
                 return obj
             except:
                 return obj
