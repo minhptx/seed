@@ -17,16 +17,19 @@ class Pipeline:
         for document in documents:
             title = document["title"]
             text = document["text"]
-            sentences = text_to_sentences(text).split("\n")
-            for sentence in sentences:
-                print(sentence, df)
-                is_verified, prob = self.verifier.verify(sentence, df)
-                relevant_sentences.append({"title": title, "text": sentence, "is_verified": is_verified, "prob": prob})
+            sentence = text
+            # sentences = text_to_sentences(text).split("\n")
+            # for sentence in sentences:
+            #     print(sentence)
+            #     print(df)
+            #     print("----------------------------------------------")
+            is_verified, prob = self.verifier.verify(sentence, df)
+            relevant_sentences.append({"title": title, "text": sentence, "is_verified": is_verified, "prob": prob})
 
         erroneous_cells = []
         for relevant_sentence in relevant_sentences:
             for column in df:
-                compare = self.extractor.compare(relevant_sentence["text"], df[column].values.tolist(), df, column)
+                compare = self.extractor.compare(relevant_sentence["text"], df[column].values.tolist()[0], df, column)
                 if not compare: 
                     erroneous_cells.append({"title": relevant_sentence["title"], "text": relevant_sentence["text"], "column": column})
                 

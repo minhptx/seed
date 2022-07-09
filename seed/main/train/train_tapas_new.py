@@ -30,15 +30,18 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import torch
 import wandb
-from datasets import Dataset, load_dataset, load_from_disk
 from seed.datasets.table_nli import TableNLIUltis
 from transformers import (
     AutoConfig,
-    BartForSequenceClassification,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    TapasTokenizer,
+    DataCollatorWithPadding,
+    TapasForSequenceClassification,
     EvalPrediction,
     HfArgumentParser,
-    TapexTokenizer,
     Trainer,
     TrainingArguments,
 )
@@ -121,7 +124,7 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        default="microsoft/tapex-base",
+        default="google/tapas-base",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
@@ -163,27 +166,24 @@ class ModelArguments:
             "with private models)."
         },
     )
-    num_labels: int = field(
-        default=2,
-        metadata={"help": "The number of output labels for the model."},
-    )
 
 
 def process_table(items, tokenizer):
-    tables = [
-        pd.DataFrame(json.loads(x)).iloc[:, :200].astype(str) for x in items["table"]
-    ]
-    for idx, title in enumerate(items["table_page_title"]):
-        tables[idx]["title"] = title
+    table = pd.DataFrame(json.loads(items["table"]))
+    table = table.applymap(lambda x: " , ".join(x) if isinstance(x, list) else x)
+    table["title"] = items["table_page_title"]
+    table = table.transpose()
+    table = table.iloc[1:, :].reset_index().rename({0: "values"}, axis=1)
     encoding = tokenizer(
-        table=tables,
-        query=items["sentence"],
+        table,
+        items["sentence"],
         truncation=True,
         padding=True,
+        return_tensors="pt",
     )
 
-    encoding["labels"] = np.array(items["label"]).astype(int)
-    print(encoding)
+    encoding = {x: y.squeeze() for x, y in encoding.items()}
+    encoding["label"] = torch.tensor([items["label"]]).long()
     return encoding
 
 
@@ -215,7 +215,7 @@ def main():
         wandb.init(
             project="seed",
             entity="clapika",
-            name=datetime.now().strftime("tapex " + "_%Y%m%d-%H%M%S"),
+            name=datetime.now().strftime("bart " + "_%Y%m%d-%H%M%S"),
         )
 
     # Load pretrained model and tokenizer
@@ -226,53 +226,45 @@ def main():
         model_args.config_name
         if model_args.config_name
         else model_args.model_name_or_path,
-        num_labels=model_args.num_labels,
+        num_labels=3,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
         problem_type="single_label_classification",
     )
     # load tapex tokenizer
-    tokenizer = TapexTokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
         if model_args.tokenizer_name
         else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
         use_fast=model_args.use_fast_tokenizer,
         revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
         add_prefix_space=True,
     )
 
     with training_args.main_process_first():
         train_dataset = TableNLIUltis.from_jsonlines(
-            data_args.train_file, split="train"
-        ).map(lambda x: process_table(x, tokenizer), batched=True, num_proc=48)
+            data_args.train_file, split="train[:1000]"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
         val_dataset = TableNLIUltis.from_jsonlines(
-            data_args.dev_file, split="train"
-        ).map(lambda x: process_table(x, tokenizer), batched=True, num_proc=48)
+            data_args.dev_file, split="train[:1000]"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
         predict_dataset = TableNLIUltis.from_jsonlines(
-            data_args.test_file, split="train"
-        ).map(lambda x: process_table(x, tokenizer), batched=True, num_proc=48)
+            data_args.test_file, split="train[:1000]"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
 
         train_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/train")
         val_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
-        predict_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/test")
 
     # train_dataset = load_from_disk("temp/tapex/train")
     # val_dataset = load_from_disk("temp/tapex/dev")
-
-    model = BartForSequenceClassification.from_pretrained(
+    model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
+        ignore_mismatched_sizes=True,
     )
-
-    # datasets = train_dataset.train_test_split(train_size=0.1)
-    # train_dataset = datasets["train"]
 
     # Set seed before initializing model.
 
@@ -281,16 +273,22 @@ def main():
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.argmax(preds, axis=1)
-        return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
 
+        labels = p.label_ids.squeeze()
+
+        return {"accuracy": (preds == labels).astype(np.float32).mean().item()}
+
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+    print(training_args)
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=val_dataset if training_args.do_eval else None,
+        eval_dataset=train_dataset if training_args.do_eval else None,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
+        data_collator=data_collator,
     )
 
     # Training
@@ -316,7 +314,7 @@ def main():
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
-        metrics = trainer.evaluate(eval_dataset=val_dataset)
+        metrics = trainer.evaluate(eval_dataset=train_dataset)
         max_eval_samples = (
             data_args.max_eval_samples
             if data_args.max_eval_samples is not None
@@ -327,25 +325,23 @@ def main():
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
-        logger.info("*** Predict ***")
+    # metrics = trainer.evaluate(eval_dataset=train_dataset)
+    # max_train_samples = (
+    #     data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+    # )
+    # metrics["train_eval_samples"] = min(max_train_samples, len(train_dataset))
 
-        # Removing the `label` columns because it contains -1 and Trainer won't like that.
-        predict_dataset = val_dataset
-        _, _, metrics = trainer.predict(predict_dataset, metric_key_prefix="predict")
-
-        trainer.log_metrics("test", metrics)
-        trainer.save_metrics("test", metrics)
-
+    # trainer.log_metrics("train", metrics)
+    # trainer.save_metrics("train", metrics)
     if training_args.do_predict:
         logger.info("*** Predict ***")
 
         # Removing the `label` columns because it contains -1 and Trainer won't like that.
-        outputs = trainer.predict(predict_dataset, metric_key_prefix="predict")
+        outputs = trainer.predict(train_dataset, metric_key_prefix="predict")
         all_predictions = outputs.predictions
         metrics = outputs.metrics
         trainer.log_metrics("test", metrics)
         trainer.save_metrics("test", metrics)
-        wandb.log("test/accuracy", metrics)
         predictions = np.argmax(all_predictions, axis=-1)
 
         output_predict_file = os.path.join(training_args.output_dir, f"infotab.txt")

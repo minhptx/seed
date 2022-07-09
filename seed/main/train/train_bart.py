@@ -22,29 +22,26 @@ Adapted from script: https://github.com/huggingface/transformers/blob/master/exa
 import json
 import logging
 import os
-import random
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
-import jsonlines
 import numpy as np
 import pandas as pd
-from datasets import Dataset, load_dataset, load_from_disk
+import torch
+import wandb
+from seed.datasets.table_nli import TableNLIUltis
 from transformers import (
     AutoConfig,
-    BartForSequenceClassification,
-    DataCollatorWithPadding,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
     EvalPrediction,
     HfArgumentParser,
-    TapexTokenizer,
     Trainer,
     TrainingArguments,
-    default_data_collator,
-    set_seed,
 )
-
-from seed.datasets.table_nli import TableNLIUltis
 
 logger = logging.getLogger(__name__)
 
@@ -59,50 +56,60 @@ class DataTrainingArguments:
     """
 
     train_file: Optional[str] = field(
-        default="data/train.json", metadata={"help": "The path to the train dataset to use (via the datasets library)."}
+        default="data/train.json",
+        metadata={
+            "help": "The path to the train dataset to use (via the datasets library)."
+        },
     )
     dev_file: Optional[str] = field(
-        default="data/dev.json", metadata={"help": "The path to the dev dataset to use (via the datasets library)."}
+        default="data/dev.json",
+        metadata={
+            "help": "The path to the dev dataset to use (via the datasets library)."
+        },
     )
-    test_path: Optional[str] = field(
-        default="data/test.json", metadata={"help": "The path to the test dataset to use (via the datasets library)."}
+    test_file: Optional[str] = field(
+        default="data/test.json",
+        metadata={
+            "help": "The path to the test dataset to use (via the datasets library)."
+        },
     )
     max_seq_length: int = field(
         default=1024,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
-                    "than this will be truncated, sequences shorter will be padded."
+            "than this will be truncated, sequences shorter will be padded."
         },
     )
     overwrite_cache: bool = field(
-        default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
+        default=False,
+        metadata={"help": "Overwrite the cached preprocessed datasets or not."},
     )
     pad_to_max_length: bool = field(
         default=False,
         metadata={
             "help": "Whether to pad all samples to `max_seq_length`. "
-                    "If False, will pad the samples dynamically when batching to the maximum length in the batch."
+            "If False, will pad the samples dynamically when batching to the maximum length in the batch."
         },
     )
     max_train_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
-                    "value if set."
+            "value if set."
         },
     )
     max_eval_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
-                    "value if set."
+            "value if set."
         },
     )
     max_predict_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of prediction examples to this "
-                    "value if set."
+            "value if set."
         },
     )
 
@@ -114,57 +121,86 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        default="microsoft/tapex-base", metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+        default="facebook/bart-large",
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"
+        },
     )
     config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+        default=None,
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
     )
     tokenizer_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+        default=None,
+        metadata={
+            "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
     )
     cache_dir: Optional[str] = field(
         default=None,
-        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+        metadata={
+            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"
+        },
     )
     use_fast_tokenizer: bool = field(
         default=True,
-        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+        metadata={
+            "help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."
+        },
     )
     model_revision: str = field(
         default="main",
-        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+        metadata={
+            "help": "The specific model version to use (can be a branch name, tag name or commit id)."
+        },
     )
     use_auth_token: bool = field(
         default=False,
         metadata={
             "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
-                    "with private models)."
+            "with private models)."
         },
     )
 
 
-def process_table(items, tokenizer):
-    tabularized_sentences = [f"{item[0]}{tokenizer.sep_token}{tokenizer.sep_token.join(item[1])}{tokenizer.sep_token}{item[2]}" for item in zip(items["header"], items["table"], items["sentence"])]
-    encoding = tokenizer(
-        tabularized_sentences,
-        items["extraction"],
-        truncation=True,
-        padding=True,
+def process_table(item, tokenizer):
+    table = pd.DataFrame(json.loads(item["table"])).drop("index", axis=1)
+    for column in table.columns:
+        table[column] = table[column].apply(lambda x: f"{column} : {' , '.join(x)}")
+
+    linearized_table = tokenizer.sep_token.join(
+        table.apply(lambda x: " ; ".join(x), axis=1).values.tolist()
     )
 
-    encoding["labels"] = np.array(items["label"]).astype(int)
+    encoding = tokenizer(
+        linearized_table,
+        item["sentence"],
+        truncation=True,
+        padding=True,
+        return_tensors="pt",
+    )
+
+    encoding = {x: y.squeeze() for x, y in encoding.items()}
+    encoding["labels"] = torch.tensor([item["label"]]).long()
     return encoding
+
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser(
+        (ModelArguments, DataTrainingArguments, TrainingArguments)
+    )
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, training_args = parser.parse_json_file(
+            json_file=os.path.abspath(sys.argv[1])
+        )
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
@@ -175,62 +211,69 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
-    label_list = [False, True]
-    
+    with training_args.main_process_first():
+        wandb.init(
+            project="seed",
+            entity="clapika",
+            name=datetime.now().strftime("bart " + "_%Y%m%d-%H%M%S"),
+        )
 
-# Load pretrained model and tokenizer
+    # Load pretrained model and tokenizer
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
     config = AutoConfig.from_pretrained(
-        model_args.config_name if model_args.config_name else model_args.model_name_or_path,
-        num_labels=2,
+        model_args.config_name
+        if model_args.config_name
+        else model_args.model_name_or_path,
+        num_labels=3,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-        problem_type="single_label_classification"
+        problem_type="single_label_classification",
     )
     # load tapex tokenizer
-    tokenizer = TapexTokenizer.from_pretrained(
-        model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name
+        if model_args.tokenizer_name
+        else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
         use_fast=model_args.use_fast_tokenizer,
         revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-        add_prefix_space=True
+        add_prefix_space=True,
     )
 
-    # train_dataset = TableNLIUltis.from_jsonlines(data_args.train_file)["train"].map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
-    # val_dataset = TableNLIUltis.from_jsonlines(data_args.dev_file)["train"].map(lambda x: process_table(x, tokenizer), batched=True, remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
+    with training_args.main_process_first():
+        train_dataset = TableNLIUltis.from_jsonlines(
+            data_args.train_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
+        val_dataset = TableNLIUltis.from_jsonlines(
+            data_args.dev_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
+        predict_dataset = TableNLIUltis.from_jsonlines(
+            data_args.test_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
 
-    # train_dataset.save_to_disk("temp/tapex/train")
-    # val_dataset.save_to_disk("temp/tapex/dev")
+        train_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/train")
+        val_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
 
-    train_dataset = load_from_disk("temp/tapex/train")
-    val_dataset = load_from_disk("temp/tapex/dev")
-
-    model = BartForSequenceClassification.from_pretrained(
+    # train_dataset = load_from_disk("temp/tapex/train")
+    # val_dataset = load_from_disk("temp/tapex/dev")
+    model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
 
-    # datasets = train_dataset.train_test_split(train_size=0.1)
-    # train_dataset = datasets["train"]
-
     # Set seed before initializing model.
-    set_seed(training_args.seed)
 
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.argmax(preds, axis=1)
-        return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
 
+        return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
 
     # Initialize our Trainer
     trainer = Trainer(
@@ -249,7 +292,9 @@ def main():
         train_result = trainer.train()
         metrics = train_result.metrics
         max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+            data_args.max_train_samples
+            if data_args.max_train_samples is not None
+            else len(train_dataset)
         )
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
@@ -265,7 +310,9 @@ def main():
 
         metrics = trainer.evaluate(eval_dataset=val_dataset)
         max_eval_samples = (
-            data_args.max_eval_samples if data_args.max_eval_samples is not None else len(val_dataset)
+            data_args.max_eval_samples
+            if data_args.max_eval_samples is not None
+            else len(val_dataset)
         )
         metrics["eval_samples"] = min(max_eval_samples, len(val_dataset))
 
@@ -280,32 +327,34 @@ def main():
 
     # trainer.log_metrics("train", metrics)
     # trainer.save_metrics("train", metrics)
+    if training_args.do_predict:
+        logger.info("*** Predict ***")
 
-    logger.info("*** Predict ***")
+        # Removing the `label` columns because it contains -1 and Trainer won't like that.
+        outputs = trainer.predict(predict_dataset, metric_key_prefix="predict")
+        all_predictions = outputs.predictions
+        metrics = outputs.metrics
+        trainer.log_metrics("test", metrics)
+        trainer.save_metrics("test", metrics)
+        predictions = np.argmax(all_predictions, axis=-1)
 
-    # Removing the `label` columns because it contains -1 and Trainer won't like that.
-    predict_dataset = val_dataset
-    all_predictions = trainer.predict(predict_dataset, metric_key_prefix="predict").predictions[0]
-    predictions = np.argmax(all_predictions, axis=1)
+        output_predict_file = os.path.join(training_args.output_dir, f"infotab.txt")
+        if trainer.is_world_process_zero():
+            with open(output_predict_file, "w") as writer:
+                logger.info(f"***** Predict Results *****")
+                for index, item in enumerate(predictions):
+                    writer.write(f"Index: {index}\t Preds: {item}\n")
+                    writer.write(str(all_predictions[index]) + "\n")
+                    writer.write(str(predict_dataset[index]["label"]) + "\n")
+                    writer.write(predict_dataset[index]["sentence"] + "\n")
+                    writer.write(predict_dataset[index]["table"] + "\n")
+                    result = predictions[index] == predict_dataset[index]["label"]
+                    writer.write("Result: " + str(result) + "\n")
 
-    output_predict_file = os.path.join(training_args.output_dir, f"predict_results_tabfact.txt")
-    if trainer.is_world_process_zero():
-        with open(output_predict_file, "w") as writer:
-            logger.info(f"***** Predict Results *****")
-            writer.write("index\tprediction\n")
-            for index, item in enumerate(predictions):
-                item = label_list[item]
-                writer.write(f"{index}\t{item}\n")
-                writer.write(str(all_predictions[index]) + "\n")
-                writer.write(str(val_dataset[index]["label"]) + "\n")
-                writer.write(val_dataset[index]["sentence"] + "\n")
-                writer.write(val_dataset[index]["table"] + "\n")
-                result = (predictions[index] == val_dataset.iloc[index]["label"])
-                writer.write(val_dataset.iloc[index]["table"] + "\n")
-                writer.write("Result: " + str(result) + "\n")
-
-
-    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-classification"}
+    kwargs = {
+        "finetuned_from": model_args.model_name_or_path,
+        "tasks": "text-classification",
+    }
 
     if training_args.push_to_hub:
         trainer.push_to_hub(**kwargs)
@@ -315,4 +364,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

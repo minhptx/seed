@@ -76,6 +76,8 @@ class UQAExtractor:
         elif type == "MISC":
             question = f"Which {column}?"
 
+        print(question)
+        print(df)
         return self.run_unifiedqa(f"{question} \\n {sentence}")
         
     def compare(self, sentence, value, df, column):

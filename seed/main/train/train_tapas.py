@@ -5,14 +5,12 @@ import sys
 from pathlib import Path
 from dataclasses import dataclass, field
 
-from datasets import load_from_disk
-import jsonlines
 import pandas as pd
 import torch
 import torch.optim as optim
 import wandb
 from accelerate import Accelerator
-from datasets import Dataset, load_metric
+from datasets import Dataset, load_from_disk, load_metric
 from tqdm import tqdm
 from transformers import (
     DataCollatorWithPadding,
@@ -53,16 +51,16 @@ class DataArguments:
         default=16,
         metadata={"help": "The batch size"},
     )
+    num_labels: int = field(
+        default=2,
+        metadata={"help": "The number of labels"},
+    )
 
 
-def encode_tapas(item, tokenizer):
-    tables = [
-        pd.DataFrame(json.loads(x)).drop(columns=["index"]).iloc[:, :20]
-        for x in item["table"]
-    ]
-
+def process_table(item, tokenizer):
+    table = pd.DataFrame(json.loads(item["table"])).iloc[:, :20]
     encoding = tokenizer(
-        table=tables,
+        table=table,
         queries=item["sentence"][:100],
         truncation=True,
         padding="max_length",
@@ -90,56 +88,29 @@ if __name__ == "__main__":
         training_args, data_args = parser.parse_args_into_dataclasses()
     metric = load_metric("accuracy")
 
-    tokenizer = TapasTokenizer.from_pretrained("google/tapas-base-finetuned-wtq")
-    config = TapasConfig.from_pretrained("google/tapas-base-finetuned-wtq")
+    tokenizer = TapasTokenizer.from_pretrained("google/tapas-base")
+    config = TapasConfig.from_pretrained("google/tapas-base")
+    config.num_labels = data_args.num_labels
     model = TapasForSequenceClassification.from_pretrained(
-        "google/tapas-base-finetuned-wtq", config=config
+        "google/tapas-base", config=config
     )
-    model.num_labels = 2
-
-    encode = partial(encode_tapas, tokenizer=tokenizer)
 
     print("Reading train data")
+  
+    if Path(f"temp/{Path(training_args.output_dir).stem}/train").exists():
+        train_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/train")
+        train_dataset = train_dataset.remove_columns([x for x in train_dataset.features.keys() if x not in ["input_ids", "token_type_ids", "labels", "attention_mask"]])
+        val_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
+        val_dataset = val_dataset.remove_columns([x for x in val_dataset.features.keys() if x not in ["input_ids", "token_type_ids", "labels", "attention_mask"]])
+    else:
+        train_dataset = TableNLIUltis.from_jsonlines(data_args.train_file, filter_row=False)["train"].map(lambda x: process_table(x, tokenizer),  remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
+        val_dataset = TableNLIUltis.from_jsonlines(data_args.dev_file, filter_row=False)["train"].map(lambda x: process_table(x, tokenizer), remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
+        predict_dataset = TableNLIUltis.from_jsonlines(data_args.test_file, filter_row=False)["train"].map(lambda x: process_table(x, tokenizer), remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
 
-    train_df = pd.DataFrame(
-        list(jsonlines.open(data_args.train_file)),
-        columns=["sentence", "table", "label", "table_page_title"],
-    )
+        train_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/train")
+        val_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
+        predict_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/test")
 
-    dev_df = pd.DataFrame(
-        list(jsonlines.open(data_args.dev_file)),
-        columns=["sentence", "table", "label", "table_page_title"],
-    )
-
-    train_dataset = Dataset.from_pandas(train_df)
-    print("Filtering train data")
-    train_dataset = TableNLIUltis.filter_main_row(train_dataset, num_proc=48)
-    train_dataset = train_dataset.map(encode, num_proc=48, batched=True)
-    train_dataset = train_dataset.with_format(
-        type="torch",
-        columns=["input_ids", "token_type_ids", "attention_mask", "labels"],
-    )
-    print("Filtering done for train")
-    train_dataset.save_to_disk(".cache/tapas_train")
-
-    # train_dataset = load_from_disk(".cache/tapas_train")
-
-    print("Reading dev data")
-    dev_dataset = Dataset.from_pandas(dev_df)
-    print("Filtering dev data")
-    dev_dataset = TableNLIUltis.filter_main_row(dev_dataset, num_proc=48)
-    dev_dataset = dev_dataset.map(encode, num_proc=48, batched=True).with_format(
-        type="torch",
-        columns=["input_ids", "token_type_ids", "attention_mask", "labels"],
-    )
-    dev_dataset.set_format(
-        type="torch",
-        columns=["input_ids", "token_type_ids", "attention_mask", "labels"],
-    )
-    print("Filtering done for dev")
-    dev_dataset.save_to_disk(".cache/tapas_dev")
-
-    # dev_dataset = load_from_disk(".cache/tapas_dev")
 
     start_epoch = 0
     num_epochs = training_args.num_train_epochs
@@ -153,7 +124,7 @@ if __name__ == "__main__":
         collate_fn=collator,
     )
     eval_dl = torch.utils.data.DataLoader(
-        dev_dataset, shuffle=False, batch_size=data_args.batch_size, collate_fn=collator
+        val_dataset, shuffle=False, batch_size=data_args.batch_size, collate_fn=collator
     )
 
     accelerator = Accelerator()
@@ -164,7 +135,7 @@ if __name__ == "__main__":
         model, optimizer, train_dl, eval_dl
     )
 
-    num_train_steps = len(train_dl) * num_epochs
+    num_train_steps = len(train_dl) * num_epochs / 6
     lr_scheduler = get_linear_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=100,
@@ -174,11 +145,14 @@ if __name__ == "__main__":
     gradient_accumulation_steps = 1
     progress_bar = tqdm(range(int(num_train_steps)))
 
+    print("Training")
+
     for epoch in range(start_epoch, start_epoch + num_epochs):
         model.train()
         running_loss = 0.0
         for step, batch in enumerate(train_dataloader):
-            batch["token_type_ids"] = torch.cat(batch["token_type_ids"]).unsqueeze(0)
+            # print(batch["token_type_ids"])
+            # batch["token_type_ids"] = torch.cat(batch["token_type_ids"]).unsqueeze(0)
             outputs = model(**batch)
             loss = outputs.loss
             loss = loss / gradient_accumulation_steps
@@ -198,17 +172,14 @@ if __name__ == "__main__":
         all_labels = []
         for step, batch in enumerate(eval_dataloader):
             with torch.no_grad():
-                batch["token_type_ids"] = torch.cat(batch["token_type_ids"]).unsqueeze(
-                    0
-                )
                 outputs = model(**batch)
             predictions = outputs.logits.argmax(dim=-1)
             metric.add_batch(
                 predictions=accelerator.gather(predictions),
                 references=accelerator.gather(batch["labels"]),
             )
-            all_predictions.extend(accelerator.gather(predictions))
-            all_labels.extend(accelerator.gather(batch["labels"]))
+            all_predictions.extend(accelerator.gather(predictions).detach().cpu().numpy().tolist())
+            all_labels.extend(accelerator.gather(batch["labels"]).detach().cpu().numpy().tolist())
 
         dev_acc = metric.compute()
         accelerator.print(f"Eval epoch {epoch + 1}:", dev_acc)
@@ -227,6 +198,15 @@ if __name__ == "__main__":
             (folder_path / "model.bin"),
         )
 
+        json.dump({
+                "epoch": epoch + 1,
+                "loss": running_loss,
+                "dev_accuracy": dev_acc,
+                "dev_gold": all_labels,
+                "dev_pred": all_predictions,
+                "test_accuracy": dev_acc,
+            }, (Path(training_args.output_dir) / f"result_{epoch + 1}.json").open("w"))
+
         wandb.log(
             {
                 "epoch": epoch + 1,
@@ -235,7 +215,5 @@ if __name__ == "__main__":
                 "dev_gold": all_labels,
                 "dev_pred": all_predictions,
                 "test_accuracy": dev_acc,
-                "test_gold": all_labels,
-                "test_pred": all_predictions,
             }
         )
