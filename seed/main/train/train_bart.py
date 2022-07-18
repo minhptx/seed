@@ -258,7 +258,7 @@ def main():
             data_args.dataset, split="train"
         ).map(lambda x: process_table(x, tokenizer), num_proc=24)
 
-        datasets.push_to_hub(f"clapika2010/totto_processed")
+        # datasets.push_to_hub(f"clapika2010/totto_processed")
         train_dataset, val_dataset, predict_datasets = datasets["train"], datasets["dev"], [datasets["dev"]]
     
 
@@ -283,7 +283,7 @@ def main():
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=train_dataset if training_args.do_eval else None,
+        eval_dataset=val_dataset if training_args.do_eval else None,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer
     )

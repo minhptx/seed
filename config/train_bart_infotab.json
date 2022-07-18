@@ -1,6 +1,6 @@
 {
     "output_dir": "models/bart-infotab",
-    "dataset": "clapika2010/infotab",
+    "dataset": "clapika2010/infotab_processed",
     "do_train": true,
     "do_eval": true,
     "do_predict": true,
