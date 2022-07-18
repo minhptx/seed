@@ -1,219 +1,370 @@
-from functools import partial
+#!/usr/bin/env python
+# coding=utf-8
+# Copyright 2022 The Microsoft and The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Fine-tuning the library models for tapex on table-based fact verification tasks.
+Adapted from script: https://github.com/huggingface/transformers/blob/master/examples/pytorch/text-classification/run_glue.py
+"""
+
 import json
+import logging
 import os
 import sys
-from pathlib import Path
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
+import numpy as np
 import pandas as pd
 import torch
-import torch.optim as optim
 import wandb
-from accelerate import Accelerator
-from datasets import Dataset, load_from_disk, load_metric
-from tqdm import tqdm
+from seed.datasets.table_nli import TableNLIUltis
 from transformers import (
-    DataCollatorWithPadding,
-    HfArgumentParser,
-    TapasConfig,
-    TapasForSequenceClassification,
+    AutoConfig,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
     TapasTokenizer,
+    DataCollatorWithPadding,
+    TapasForSequenceClassification,
+    EvalPrediction,
+    HfArgumentParser,
     Trainer,
     TrainingArguments,
-    get_linear_schedule_with_warmup,
 )
 
-from seed.datasets.table_nli import TableNLIUltis
-
-metric = load_metric("accuracy")
-pd.set_option("mode.chained_assignment", "raise")
+logger = logging.getLogger(__name__)
 
 
 @dataclass
-class DataArguments:
-    train_file: str = field(
+class DataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    Using `HfArgumentParser` we can turn this class
+    into argparse arguments to be able to specify them on
+    the command line.
+    """
+
+    train_file: Optional[str] = field(
         default="data/train.json",
-        metadata={"help": "The path to train data file"},
+        metadata={
+            "help": "The path to the train dataset to use (via the datasets library)."
+        },
     )
-    dev_file: str = field(
+    dev_file: Optional[str] = field(
         default="data/dev.json",
-        metadata={"help": "The path to dev data file"},
+        metadata={
+            "help": "The path to the dev dataset to use (via the datasets library)."
+        },
     )
-    test_file: str = field(
+    test_file: Optional[str] = field(
         default="data/test.json",
-        metadata={"help": "The path to test data file"},
+        metadata={
+            "help": "The path to the test dataset to use (via the datasets library)."
+        },
     )
-    cache_dir: str = field(
-        default=".cache/tapas/",
-        metadata={"help": "The path to cache dir"},
+    max_seq_length: int = field(
+        default=1024,
+        metadata={
+            "help": "The maximum total input sequence length after tokenization. Sequences longer "
+            "than this will be truncated, sequences shorter will be padded."
+        },
     )
-    batch_size: int = field(
-        default=16,
-        metadata={"help": "The batch size"},
+    overwrite_cache: bool = field(
+        default=False,
+        metadata={"help": "Overwrite the cached preprocessed datasets or not."},
     )
-    num_labels: int = field(
-        default=2,
-        metadata={"help": "The number of labels"},
+    pad_to_max_length: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to pad all samples to `max_seq_length`. "
+            "If False, will pad the samples dynamically when batching to the maximum length in the batch."
+        },
+    )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
+            "value if set."
+        },
+    )
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
+            "value if set."
+        },
+    )
+    max_predict_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "For debugging purposes or quicker training, truncate the number of prediction examples to this "
+            "value if set."
+        },
     )
 
 
-def process_table(item, tokenizer):
-    table = pd.DataFrame(json.loads(item["table"])).iloc[:, :20]
+@dataclass
+class ModelArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
+    """
+
+    model_name_or_path: str = field(
+        default="google/tapas-base",
+        metadata={
+            "help": "Path to pretrained model or model identifier from huggingface.co/models"
+        },
+    )
+    config_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Pretrained tokenizer name or path if not the same as model_name"
+        },
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"
+        },
+    )
+    use_fast_tokenizer: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."
+        },
+    )
+    model_revision: str = field(
+        default="main",
+        metadata={
+            "help": "The specific model version to use (can be a branch name, tag name or commit id)."
+        },
+    )
+    use_auth_token: bool = field(
+        default=False,
+        metadata={
+            "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
+            "with private models)."
+        },
+    )
+
+
+def process_table(items, tokenizer):
+    table = pd.DataFrame(json.loads(items["table"]))
+    table = table.applymap(lambda x: " , ".join(x) if isinstance(x, list) else x).astype(str)
+    table["title"] = items["table_page_title"]
     encoding = tokenizer(
-        table=table,
-        queries=item["sentence"][:100],
+        table,
+        items["sentence"],
         truncation=True,
-        padding="max_length",
-        max_length=512,
+        padding=True,
         return_tensors="pt",
     )
-    encoding = {key: val.squeeze(0) for key, val in encoding.items()}
-    encoding["token_type_ids"] = encoding["token_type_ids"].long()
-    encoding["labels"] = torch.tensor([item["label"]]).long()
+
+    encoding = {x: y.squeeze() for x, y in encoding.items()}
+    encoding["label"] = torch.tensor([items["label"]]).long()
     return encoding
 
 
-if __name__ == "__main__":
-    wandb.init(
-        project="seed", entity="clapika", config={"model_name": "tapas"}, group="tapas"
+def main():
+    # See all possible arguments in src/transformers/training_args.py
+    # or by passing the --help flag to this script.
+    # We now keep distinct sets of args, for a cleaner separation of concerns.
+
+    parser = HfArgumentParser(
+        (ModelArguments, DataTrainingArguments, TrainingArguments)
     )
-    parser = HfArgumentParser((TrainingArguments, DataArguments))
-
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
-
-        training_args, data_args = parser.parse_json_file(
+        # If we pass only one argument to the script and it's the path to a json file,
+        # let's parse it to get our arguments.
+        model_args, data_args, training_args = parser.parse_json_file(
             json_file=os.path.abspath(sys.argv[1])
         )
     else:
-        training_args, data_args = parser.parse_args_into_dataclasses()
-    metric = load_metric("accuracy")
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    tokenizer = TapasTokenizer.from_pretrained("google/tapas-base")
-    config = TapasConfig.from_pretrained("google/tapas-base")
-    config.num_labels = data_args.num_labels
-    model = TapasForSequenceClassification.from_pretrained(
-        "google/tapas-base", config=config
+    # Setup logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
     )
 
-    print("Reading train data")
-  
-    if Path(f"temp/{Path(training_args.output_dir).stem}/train").exists():
-        train_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/train")
-        train_dataset = train_dataset.remove_columns([x for x in train_dataset.features.keys() if x not in ["input_ids", "token_type_ids", "labels", "attention_mask"]])
-        val_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
-        val_dataset = val_dataset.remove_columns([x for x in val_dataset.features.keys() if x not in ["input_ids", "token_type_ids", "labels", "attention_mask"]])
-    else:
-        train_dataset = TableNLIUltis.from_jsonlines(data_args.train_file, filter_row=False)["train"].map(lambda x: process_table(x, tokenizer),  remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
-        val_dataset = TableNLIUltis.from_jsonlines(data_args.dev_file, filter_row=False)["train"].map(lambda x: process_table(x, tokenizer), remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
-        predict_dataset = TableNLIUltis.from_jsonlines(data_args.test_file, filter_row=False)["train"].map(lambda x: process_table(x, tokenizer), remove_columns=["table", "sentence", "label", "highlighted_cells"], num_proc=48)
+    with training_args.main_process_first():
+        wandb.init(
+            project="seed",
+            entity="clapika",
+            name=datetime.now().strftime("tapas " + "_%Y%m%d-%H%M%S"),
+        )
+
+    # Load pretrained model and tokenizer
+    #
+    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
+    # download model & vocab.
+    config = AutoConfig.from_pretrained(
+        model_args.config_name
+        if model_args.config_name
+        else model_args.model_name_or_path,
+        num_labels=3,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        problem_type="single_label_classification",
+    )
+    # load tapex tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name
+        if model_args.tokenizer_name
+        else model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        use_fast=model_args.use_fast_tokenizer,
+        revision=model_args.model_revision,
+        add_prefix_space=True,
+    )
+
+    with training_args.main_process_first():
+        train_dataset = TableNLIUltis.from_jsonlines(
+            data_args.train_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
+        val_dataset = TableNLIUltis.from_jsonlines(
+            data_args.dev_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
+        predict_dataset = TableNLIUltis.from_jsonlines(
+            data_args.test_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
 
         train_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/train")
         val_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
-        predict_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/test")
 
-
-    start_epoch = 0
-    num_epochs = training_args.num_train_epochs
-
-    collator = DataCollatorWithPadding(tokenizer=tokenizer, padding=True)
-
-    train_dl = torch.utils.data.DataLoader(
-        train_dataset,
-        shuffle=False,
-        batch_size=data_args.batch_size,
-        collate_fn=collator,
-    )
-    eval_dl = torch.utils.data.DataLoader(
-        val_dataset, shuffle=False, batch_size=data_args.batch_size, collate_fn=collator
+    # train_dataset = load_from_disk("temp/tapex/train")
+    # val_dataset = load_from_disk("temp/tapex/dev")
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        config=config,
+        use_auth_token=True if model_args.use_auth_token else None,
+        ignore_mismatched_sizes=True,
     )
 
-    accelerator = Accelerator()
+    # Set seed before initializing model.
 
-    optimizer = optim.AdamW(params=model.parameters(), lr=1e-5)
+    # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
+    # predictions and label_ids field) and has to return a dictionary string to float.
+    def compute_metrics(p: EvalPrediction):
+        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        preds = np.argmax(preds, axis=1)
 
-    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
-        model, optimizer, train_dl, eval_dl
+        labels = p.label_ids.squeeze()
+
+        return {"accuracy": (preds == labels).astype(np.float32).mean().item()}
+
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+    print(training_args)
+    # Initialize our Trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset if training_args.do_train else None,
+        eval_dataset=val_dataset if training_args.do_eval else None,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+        data_collator=data_collator,
     )
 
-    num_train_steps = len(train_dl) * num_epochs / 6
-    lr_scheduler = get_linear_schedule_with_warmup(
-        optimizer=optimizer,
-        num_warmup_steps=100,
-        num_training_steps=num_train_steps,
-    )
+    # Training
 
-    gradient_accumulation_steps = 1
-    progress_bar = tqdm(range(int(num_train_steps)))
-
-    print("Training")
-
-    for epoch in range(start_epoch, start_epoch + num_epochs):
-        model.train()
-        running_loss = 0.0
-        for step, batch in enumerate(train_dataloader):
-            # print(batch["token_type_ids"])
-            # batch["token_type_ids"] = torch.cat(batch["token_type_ids"]).unsqueeze(0)
-            outputs = model(**batch)
-            loss = outputs.loss
-            loss = loss / gradient_accumulation_steps
-            running_loss += loss.item()
-            accelerator.backward(loss)
-            if step % gradient_accumulation_steps == 0:
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
-            progress_bar.update(1)
-        progress_bar.set_description(
-            f"Loss value: {running_loss / len(train_dataloader)}"
+    if training_args.do_train:
+        logger.info("*** Training ***")
+        train_result = trainer.train()
+        metrics = train_result.metrics
+        max_train_samples = (
+            data_args.max_train_samples
+            if data_args.max_train_samples is not None
+            else len(train_dataset)
         )
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
-        model.eval()
-        all_predictions = []
-        all_labels = []
-        for step, batch in enumerate(eval_dataloader):
-            with torch.no_grad():
-                outputs = model(**batch)
-            predictions = outputs.logits.argmax(dim=-1)
-            metric.add_batch(
-                predictions=accelerator.gather(predictions),
-                references=accelerator.gather(batch["labels"]),
-            )
-            all_predictions.extend(accelerator.gather(predictions).detach().cpu().numpy().tolist())
-            all_labels.extend(accelerator.gather(batch["labels"]).detach().cpu().numpy().tolist())
+        trainer.save_model()  # Saves the tokenizer too for easy upload
 
-        dev_acc = metric.compute()
-        accelerator.print(f"Eval epoch {epoch + 1}:", dev_acc)
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
 
-        accelerator.wait_for_everyone()
-        unwrapped_model = accelerator.unwrap_model(model)
+    # Evaluation
+    if training_args.do_eval:
+        logger.info("*** Evaluate ***")
 
-        folder_path = Path(training_args.output_dir) / str(epoch + 1)
-        folder_path.mkdir(parents=True, exist_ok=True)
-
-        accelerator.save(
-            {
-                "model": unwrapped_model.state_dict(),
-                "optimizer": optimizer.optimizer.state_dict(),
-            },
-            (folder_path / "model.bin"),
+        metrics = trainer.evaluate(eval_dataset=val_dataset)
+        max_eval_samples = (
+            data_args.max_eval_samples
+            if data_args.max_eval_samples is not None
+            else len(val_dataset)
         )
+        metrics["eval_samples"] = min(max_eval_samples, len(val_dataset))
 
-        json.dump({
-                "epoch": epoch + 1,
-                "loss": running_loss,
-                "dev_accuracy": dev_acc,
-                "dev_gold": all_labels,
-                "dev_pred": all_predictions,
-                "test_accuracy": dev_acc,
-            }, (Path(training_args.output_dir) / f"result_{epoch + 1}.json").open("w"))
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
-        wandb.log(
-            {
-                "epoch": epoch + 1,
-                "loss": running_loss,
-                "dev_accuracy": dev_acc,
-                "dev_gold": all_labels,
-                "dev_pred": all_predictions,
-                "test_accuracy": dev_acc,
-            }
-        )
+    # metrics = trainer.evaluate(eval_dataset=train_dataset)
+    # max_train_samples = (
+    #     data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+    # )
+    # metrics["train_eval_samples"] = min(max_train_samples, len(train_dataset))
+
+    # trainer.log_metrics("train", metrics)
+    # trainer.save_metrics("train", metrics)
+    if training_args.do_predict:
+        logger.info("*** Predict ***")
+
+        # Removing the `label` columns because it contains -1 and Trainer won't like that.
+        outputs = trainer.predict(predict_dataset, metric_key_prefix="predict")
+        all_predictions = outputs.predictions
+        metrics = outputs.metrics
+        trainer.log_metrics("test", metrics)
+        trainer.save_metrics("test", metrics)
+        predictions = np.argmax(all_predictions, axis=-1)
+
+        output_predict_file = os.path.join(training_args.output_dir, f"infotab.txt")
+        if trainer.is_world_process_zero():
+            with open(output_predict_file, "w") as writer:
+                logger.info(f"***** Predict Results *****")
+                for index, item in enumerate(predictions):
+                    writer.write(f"Index: {index}\t Preds: {item}\n")
+                    writer.write(str(all_predictions[index]) + "\n")
+                    writer.write(str(predict_dataset[index]["label"]) + "\n")
+                    writer.write(predict_dataset[index]["sentence"] + "\n")
+                    writer.write(predict_dataset[index]["table"] + "\n")
+                    result = predictions[index] == predict_dataset[index]["label"]
+                    writer.write("Result: " + str(result) + "\n")
+
+    kwargs = {
+        "finetuned_from": model_args.model_name_or_path,
+        "tasks": "text-classification",
+    }
+
+    if training_args.push_to_hub:
+        trainer.push_to_hub(**kwargs)
+    else:
+        trainer.create_model_card(**kwargs)
+
+
+if __name__ == "__main__":
+    main()

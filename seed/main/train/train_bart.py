@@ -249,8 +249,8 @@ def main():
 
     with training_args.main_process_first():
         if Path(f"temp/{Path(training_args.output_dir).stem}/train").exists():
-            train_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/train")
-            val_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/dev").train_test_split(train_size=0.5)["train"]
+            train_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/train").train_test_split(train_size=0.1)
+            val_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
         else:
             train_dataset = TableNLIUltis.from_jsonlines(
                 data_args.train_file, split="train"
@@ -279,20 +279,16 @@ def main():
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
-        print(p.label_ids.shape)
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        print(preds.shape)
-        preds = np.argmax(preds, axis=1)
-        print(preds.shape)
-        return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
+        preds = np.argmax(preds, axis=1).squeeze()
+        return {"accuracy": (preds == p.label_ids.squeeze()).astype(np.float32).mean().item()}
 
-    print(training_args)
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=val_dataset if training_args.do_eval else None,
+        eval_dataset=train_dataset if training_args.do_eval else None,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer
     )
@@ -320,7 +316,7 @@ def main():
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
-        metrics = trainer.evaluate(eval_dataset=val_dataset)
+        metrics = trainer.evaluate(eval_dataset=val_dataset, ignore_keys=["encoder_last_hidden_state"])
         max_eval_samples = (
             data_args.max_eval_samples
             if data_args.max_eval_samples is not None
@@ -340,7 +336,7 @@ def main():
 
                 # Removing the `label` columns because it contains -1 and Trainer won't like that.
                 for idx, predict_dataset in enumerate(predict_datasets):
-                    outputs = trainer.predict(predict_dataset)
+                    outputs = trainer.predict(predict_dataset, ignore_keys=["encoder_last_hidden_state"])
                     all_predictions = outputs.predictions[0]
                     metrics = outputs.metrics
                     trainer.log_metrics(f"test_{idx}", metrics)

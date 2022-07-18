@@ -220,6 +220,8 @@ def generate_negative_examples(df, sample, sentence):
 
 def preprocess(sample):
     table = pd.DataFrame(json.loads(sample["table"]), index=None).fillna("")
+    if "overlap_subset" in sample:
+        sample.pop("overlap_subset")
     if len(table) == 0:
         sample["label"] = True
         sample["note"] = ""
