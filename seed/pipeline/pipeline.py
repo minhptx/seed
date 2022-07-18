@@ -18,6 +18,7 @@ class Pipeline:
         for document in documents:
             title = document["title"]
             text = document["text"]
+<<<<<<< HEAD
             for sentences in re.split(r"\n|\*|(===)|(==)", text):
                 if sentences is None:
                     continue
@@ -31,5 +32,22 @@ class Pipeline:
                     relevant_sentences.append(sentence)
                     column2res = self.verifier.verify(sentence, df)
                     print(f"Title: {title} --- Sentence: '{sentence}' --- Label: {column2res}")
+=======
+            sentence = text
+            # sentences = text_to_sentences(text).split("\n")
+            # for sentence in sentences:
+            #     print(sentence)
+            #     print(df)
+            #     print("----------------------------------------------")
+            is_verified, prob = self.verifier.verify(sentence, df)
+            relevant_sentences.append({"title": title, "text": sentence, "is_verified": is_verified, "prob": prob})
+
+        erroneous_cells = []
+        for relevant_sentence in relevant_sentences:
+            for column in df:
+                compare = self.extractor.compare(relevant_sentence["text"], df[column].values.tolist()[0], df, column)
+                if not compare: 
+                    erroneous_cells.append({"title": relevant_sentence["title"], "text": relevant_sentence["text"], "column": column})
+>>>>>>> a46888adae3f322224e6354ce8244ac5ab226da5
                 
         return []

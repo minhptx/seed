@@ -28,12 +28,15 @@ price-parser = "^0.3.4"
 number-parser = "^0.2.1"
 nltk = "^3.7"
 pytorch-lightning = "^1.6.4"
+<<<<<<< HEAD
 torchvision = "0.12.0+cu113"
 sentence-transformers = "^2.2.2"
 gradio = "^3.0.24"
 colorama = "^0.4.5"
 mwparserfromhell = "^0.6.4"
 
+=======
+>>>>>>> a46888adae3f322224e6354ce8244ac5ab226da5
 
 [tool.poetry.dev-dependencies]
 black = "^22.3.0"
