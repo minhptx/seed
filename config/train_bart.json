@@ -1,8 +1,6 @@
 {
     "output_dir": "models/bart",
-    "train_file": "data/totto/totto_train_data_augmented.jsonl",
-    "dev_file": "data/totto/totto_dev_data_augmented.jsonl",
-    "test_file": "data/totto/totto_dev_data_augmented.jsonl",
+    "dataset": "clapika2010/totto",
     "do_train": true,
     "do_eval": true,
     "do_predict": false,
