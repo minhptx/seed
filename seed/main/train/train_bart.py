@@ -55,6 +55,12 @@ class DataTrainingArguments:
     into argparse arguments to be able to specify them on
     the command line.
     """
+    dataset: Optional[str] = field(
+        default="clapika2010/totto",
+        metadata={
+            "help": "Dataset to use for training and eval."
+        }
+    )
 
     train_file: Optional[str] = field(
         default="data/train.json",
@@ -248,25 +254,14 @@ def main():
         data_args.test_file = [data_args.test_file]
 
     with training_args.main_process_first():
-        if Path(f"temp/{Path(training_args.output_dir).stem}/train").exists():
-            train_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/train").train_test_split(train_size=0.1)
-            val_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
-        else:
-            train_dataset = TableNLIUltis.from_jsonlines(
-                data_args.train_file, split="train"
-            ).map(lambda x: process_table(x, tokenizer), num_proc=24)
-            val_dataset = TableNLIUltis.from_jsonlines(
-                data_args.dev_file, split="train"
-            ).map(lambda x: process_table(x, tokenizer), num_proc=24)
-            predict_datasets = [TableNLIUltis.from_jsonlines(
-                test_file, split="train"
-            ).map(lambda x: process_table(x, tokenizer), num_proc=24) for test_file in data_args.test_file] 
+        datasets = TableNLIUltis.from_jsonlines(
+            data_args.dataset, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
 
-            train_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/train")
-            val_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
+        datasets.push_to_hub(f"clapika2010/totto_processed")
+        train_dataset, val_dataset, predict_datasets = datasets["train"], datasets["dev"], [datasets["dev"]]
+    
 
-    # train_dataset = load_from_disk("temp/tapex/train")
-    # val_dataset = load_from_disk("temp/tapex/dev")
     model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),

@@ -33,7 +33,8 @@ class TableNLIUltis:
 
     @staticmethod
     def from_jsonlines(
-        file_path,
+        data_path=None,
+        file_path=None,
         cache_dir=None,
         filter_row=True,
         columns=["sentence", "table", "label", "table_page_title", "highlighted_cells"],
@@ -41,14 +42,13 @@ class TableNLIUltis:
         *args,
         **kwargs
     ):
-        df = pd.DataFrame(
-            list(jsonlines.open(file_path)),
-            columns=columns,
-        )
-        dataset = Dataset.from_pandas(df)
-        dataset = load_dataset(
-            "json", data_files=file_path, cache_dir=cache_dir, *args, **kwargs
-        ).filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
+        if data_path is not None:
+            dataset = load_dataset(data_path)
+        elif file_path is not None:
+            dataset = load_dataset(
+                "json", data_files=file_path, cache_dir=cache_dir, *args, **kwargs
+            )
+        dataset = dataset.filter(lambda x: len(x["highlighted_cells"]) > 0 and x["table"] != "[]")
         if filter_row:
             dataset = TableNLIUltis.filter_main_row(dataset)
         if output_format == "infotab":

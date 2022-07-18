@@ -1,8 +1,6 @@
 {
     "output_dir": "models/bart-infotab",
-    "train_file": "data/infotab/processed/train.jsonl",
-    "dev_file": "data/infotab/processed/dev.jsonl",
-    "test_file": "data/infotab/processed/test_alpha1.jsonl",
+    "dataset": "clapika2010/infotab",
     "do_train": true,
     "do_eval": true,
     "do_predict": true,
