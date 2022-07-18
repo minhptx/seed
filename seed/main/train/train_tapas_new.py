@@ -170,10 +170,8 @@ class ModelArguments:
 
 def process_table(items, tokenizer):
     table = pd.DataFrame(json.loads(items["table"]))
-    table = table.applymap(lambda x: " , ".join(x) if isinstance(x, list) else x)
+    table = table.applymap(lambda x: " , ".join(x) if isinstance(x, list) else x).astype(str)
     table["title"] = items["table_page_title"]
-    table = table.transpose()
-    table = table.iloc[1:, :].reset_index().rename({0: "values"}, axis=1)
     encoding = tokenizer(
         table,
         items["sentence"],
@@ -215,7 +213,7 @@ def main():
         wandb.init(
             project="seed",
             entity="clapika",
-            name=datetime.now().strftime("bart " + "_%Y%m%d-%H%M%S"),
+            name=datetime.now().strftime("tapas " + "_%Y%m%d-%H%M%S"),
         )
 
     # Load pretrained model and tokenizer
@@ -244,13 +242,13 @@ def main():
 
     with training_args.main_process_first():
         train_dataset = TableNLIUltis.from_jsonlines(
-            data_args.train_file, split="train[:1000]"
+            data_args.train_file, split="train"
         ).map(lambda x: process_table(x, tokenizer), num_proc=24)
         val_dataset = TableNLIUltis.from_jsonlines(
-            data_args.dev_file, split="train[:1000]"
+            data_args.dev_file, split="train"
         ).map(lambda x: process_table(x, tokenizer), num_proc=24)
         predict_dataset = TableNLIUltis.from_jsonlines(
-            data_args.test_file, split="train[:1000]"
+            data_args.test_file, split="train"
         ).map(lambda x: process_table(x, tokenizer), num_proc=24)
 
         train_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/train")
@@ -285,7 +283,7 @@ def main():
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=train_dataset if training_args.do_eval else None,
+        eval_dataset=val_dataset if training_args.do_eval else None,
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
         data_collator=data_collator,
@@ -314,7 +312,7 @@ def main():
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
-        metrics = trainer.evaluate(eval_dataset=train_dataset)
+        metrics = trainer.evaluate(eval_dataset=val_dataset)
         max_eval_samples = (
             data_args.max_eval_samples
             if data_args.max_eval_samples is not None
@@ -337,7 +335,7 @@ def main():
         logger.info("*** Predict ***")
 
         # Removing the `label` columns because it contains -1 and Trainer won't like that.
-        outputs = trainer.predict(train_dataset, metric_key_prefix="predict")
+        outputs = trainer.predict(predict_dataset, metric_key_prefix="predict")
         all_predictions = outputs.predictions
         metrics = outputs.metrics
         trainer.log_metrics("test", metrics)

@@ -217,6 +217,7 @@ def json_to_para(data, args):
             "hypothesis": row["hypothesis"],
             "label": label,
         }
+        print(obj)
         result.append(obj)
     return result
 

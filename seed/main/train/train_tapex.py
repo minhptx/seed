@@ -171,8 +171,10 @@ class ModelArguments:
 
 def process_table(items, tokenizer):
     tables = [
-        pd.DataFrame(json.loads(x)).iloc[:, :200].astype(str) for x in items["table"]
+        pd.DataFrame(json.loads(x)).astype(str) for x in items["table"]
     ]
+
+    tables = [table.applymap(lambda x: " , ".join(x) if isinstance(x, list) else x).astype(str) for table in tables]
     for idx, title in enumerate(items["table_page_title"]):
         tables[idx]["title"] = title
     encoding = tokenizer(
@@ -183,7 +185,6 @@ def process_table(items, tokenizer):
     )
 
     encoding["labels"] = np.array(items["label"]).astype(int)
-    print(encoding)
     return encoding
 
 
@@ -281,7 +282,9 @@ def main():
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.argmax(preds, axis=1)
-        return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
+        labels = p.label_ids.squeeze()
+
+        return {"accuracy": (preds == labels).astype(np.float32).mean().item()}
 
     # Initialize our Trainer
     trainer = Trainer(
@@ -345,7 +348,7 @@ def main():
         metrics = outputs.metrics
         trainer.log_metrics("test", metrics)
         trainer.save_metrics("test", metrics)
-        wandb.log("test/accuracy", metrics)
+        wandb.log({"test/accuracy": metrics})
         predictions = np.argmax(all_predictions, axis=-1)
 
         output_predict_file = os.path.join(training_args.output_dir, f"infotab.txt")

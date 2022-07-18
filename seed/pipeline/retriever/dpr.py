@@ -23,7 +23,8 @@ class DPRRetriever:
         title, content = json.loads(raw_content)["contents"].split("\n", 1)
         return {"title": title[1:-1], "text": content}
 
-    def search(self, query: str, k: int = 10) -> list:
+    def search(self, df, k: int = 10) -> list:
+        query = " and ".join([f"{x} is {y}" for x, y in df.to_dict(orient="records")[0].items() if all([not c.isdigit() for c in y])])
         docs = self.searcher.search(query, k)
         result = []
         if self.mode == "sprase":
@@ -31,6 +32,6 @@ class DPRRetriever:
                 result.append(self.process_content(doc.raw))
         elif self.mode == "hybrid":
             for doc in docs:
-                print(self.ssearcher.doc(doc.docid).raw())
-                result.append(self.process_content(self.ssearcher.doc(doc.docid).raw()))
+                if doc.score > 80:
+                    result.append(self.process_content(self.ssearcher.doc(doc.docid).raw()))
         return result

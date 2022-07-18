@@ -27,7 +27,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from datasets import load_from_disk
 
 import numpy as np
 import pandas as pd
@@ -169,23 +168,22 @@ class ModelArguments:
 def process_table(item, tokenizer):
     table = pd.DataFrame(json.loads(item["table"])).drop("index", axis=1)
     for column in table.columns:
-        table[column] = table[column].apply(lambda x: f"{column} : {' , '.join(x) if isinstance(x, list) else x}")
+        table[column] = table[column].apply(lambda x: f"{column} : {' , '.join(x)}")
 
     linearized_table = tokenizer.sep_token.join(
         table.apply(lambda x: " ; ".join(x), axis=1).values.tolist()
     )
+
     encoding = tokenizer(
         linearized_table,
         item["sentence"],
         truncation=True,
         padding=True,
-        max_length=512,
         return_tensors="pt",
     )
 
     encoding = {x: y.squeeze() for x, y in encoding.items()}
     encoding["labels"] = torch.tensor([item["label"]]).long()
-    encoding["label"] = encoding["labels"]
     return encoding
 
 
@@ -248,22 +246,18 @@ def main():
         data_args.test_file = [data_args.test_file]
 
     with training_args.main_process_first():
-        if Path(f"temp/{Path(training_args.output_dir).stem}/train").exists():
-            train_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/train")
-            val_dataset = load_from_disk(f"temp/{Path(training_args.output_dir).stem}/dev").train_test_split(train_size=0.5)["train"]
-        else:
-            train_dataset = TableNLIUltis.from_jsonlines(
-                data_args.train_file, split="train"
-            ).map(lambda x: process_table(x, tokenizer), num_proc=24)
-            val_dataset = TableNLIUltis.from_jsonlines(
-                data_args.dev_file, split="train"
-            ).map(lambda x: process_table(x, tokenizer), num_proc=24)
-            predict_datasets = [TableNLIUltis.from_jsonlines(
-                test_file, split="train"
-            ).map(lambda x: process_table(x, tokenizer), num_proc=24) for test_file in data_args.test_file] 
+        train_dataset = TableNLIUltis.from_jsonlines(
+            data_args.train_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
+        val_dataset = TableNLIUltis.from_jsonlines(
+            data_args.dev_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
+        predict_datasets = [TableNLIUltis.from_jsonlines(
+            test_file, split="train"
+        ).map(lambda x: process_table(x, tokenizer), num_proc=24) for test_file in data_args.test_file] 
 
-            train_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/train")
-            val_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
+        train_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/train")
+        val_dataset.save_to_disk(f"temp/{Path(training_args.output_dir).stem}/dev")
 
     # train_dataset = load_from_disk("temp/tapex/train")
     # val_dataset = load_from_disk("temp/tapex/dev")
@@ -279,14 +273,11 @@ def main():
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
-        print(p.label_ids.shape)
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        print(preds.shape)
         preds = np.argmax(preds, axis=1)
-        print(preds.shape)
+
         return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
 
-    print(training_args)
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
@@ -294,14 +285,14 @@ def main():
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=val_dataset if training_args.do_eval else None,
         compute_metrics=compute_metrics,
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
     )
 
     # Training
 
     if training_args.do_train:
         logger.info("*** Training ***")
-        train_result = trainer.train(ignore_keys_for_eval=["encoder_last_hidden_state"])
+        train_result = trainer.train()
         metrics = train_result.metrics
         max_train_samples = (
             data_args.max_train_samples
@@ -331,6 +322,14 @@ def main():
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
+    # metrics = trainer.evaluate(eval_dataset=train_dataset)
+    # max_train_samples = (
+    #     data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+    # )
+    # metrics["train_eval_samples"] = min(max_train_samples, len(train_dataset))
+
+    # trainer.log_metrics("train", metrics)
+    # trainer.save_metrics("train", metrics)
     if training_args.do_predict:
         logger.info("*** Predict ***")
 
