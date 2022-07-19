@@ -259,10 +259,10 @@ def main():
 
     with training_args.main_process_first():
         datasets = TableNLIUltis.from_jsonlines(
-            data_args.dataset, split="train"
+            data_args.dataset
         ).map(lambda x: process_table(x, tokenizer), num_proc=24)
 
-        # datasets.push_to_hub(f"clapika2010/totto_processed")
+        # datasets.push_to_hub(data_args.dataset + "_processed") 
         train_dataset, val_dataset, predict_datasets = datasets["train"], datasets["dev"], [datasets["dev"]]
     
 
