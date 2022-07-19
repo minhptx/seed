@@ -19,30 +19,27 @@ Fine-tuning the library models for tapex on table-based fact verification tasks.
 Adapted from script: https://github.com/huggingface/transformers/blob/master/examples/pytorch/text-classification/run_glue.py
 """
 
-import json
 import logging
-import os
-import sys
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
-from datasets import load_from_disk
-
-import numpy as np
-import pandas as pd
-import torch
-import wandb
 from seed.datasets.table_nli import TableNLIUltis
+from dataclasses import dataclass, field
+from typing import Optional, List
+import json
 from transformers import (
-    AutoConfig,
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    EvalPrediction,
     HfArgumentParser,
     Trainer,
     TrainingArguments,
+    AutoConfig,
+    AutoTokenizer,
+    EvalPrediction,
+    AutoModelForSequenceClassification
 )
+import os
+import sys
+import torch
+import pandas as pd
+import wandb
+import datetime
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +56,13 @@ class DataTrainingArguments:
         default="clapika2010/totto",
         metadata={
             "help": "Dataset to use for training and eval."
+        }
+    )
+
+    test_splits: Optional[List[str]] = field(
+        default=["test"],
+        metadata={
+            "help": "Test splits to use for evaluation."
         }
     )
 

@@ -1,16 +1,11 @@
 {
     "output_dir": "models/bart-infotab",
-    "train_file": "data/infotab/processed/train.jsonl",
-    "dev_file": "data/infotab/processed/dev.jsonl",
-    "test_file": [
-        "data/infotab/processed/test_alpha3.jsonl",
-        "data/infotab/processed/test_alpha1.jsonl",
-        "data/infotab/processed/test_alpha2.jsonl"
-    ],
+    "dataset": "clapika2010/infotab_processed",
+    "test_splits": ["test1", "test2", "test3", "dev"],
     "do_train": false,
     "do_eval": false,
     "do_predict": true,
-    "per_device_train_batch_size": 1,
-    "per_device_eval_batch_size": 1,
+    "per_device_train_batch_size": 4,
+    "per_device_eval_batch_size": 4,
     "model_name_or_path": "models/bart-infotab"
 }
