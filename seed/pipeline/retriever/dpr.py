@@ -32,11 +32,6 @@ class DPRRetriever:
                 result.append(self.process_content(doc.raw))
         elif self.mode == "hybrid":
             for doc in docs:
-<<<<<<< HEAD:seed/pipeline/retriever/dpr.py
                 if doc.score > 80:
                     result.append(self.process_content(self.ssearcher.doc(doc.docid).raw()))
-=======
-                print(self.ssearcher.doc(doc.docid).raw())
-                result.append(self.process_content(self.ssearcher.doc(doc.docid).raw()))
->>>>>>> a46888adae3f322224e6354ce8244ac5ab226da5:seed/retriever/dpr.py
         return result

@@ -37,7 +37,6 @@ class TableNLIUltis:
         file_path=None,
         cache_dir=None,
         filter_row=True,
-        columns=["sentence", "table", "label", "table_page_title", "highlighted_cells"],
         output_format="tapex",
         *args,
         **kwargs

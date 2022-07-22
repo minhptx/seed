@@ -16,7 +16,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import wandb
 from tqdm import tqdm
-from seed.datasets.table_nli import TableNLIUltis
+from seed.dataset.table_nli import TableNLIUltis
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
 from accelerate import Accelerator
@@ -49,12 +49,15 @@ class FeedForward(nn.Module):
         return output
 
 def is_date(string):
-	match = re.search('\d{4}-\d{2}-\d{2}', string)
-	if match:
-		date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
-		return True
-	else:
-		return False
+    match = re.search('\d{4}-\d{2}-\d{2}', string)
+    if match:
+        try:
+            date = datetime.datetime.strptime(match.group(), '%Y-%m-%d').date()
+        except:
+            return False
+        return True
+    else:
+        return False
 
 
 def load_sentences(file, skip_first=True, single_sentence=False):
@@ -128,17 +131,21 @@ def json_to_para(data, args):
 
     for index, row in enumerate(data):
         obj = json.loads(row["table"])
+        if "index" in obj:
+            obj.drop("index")
+        print("Obj: ", obj)
 
         if not obj:
             continue
         obj = obj[0]
+        obj = {x:y if isinstance(y, list) else [y] for x,y in obj.items()}
+
         try:
             title = row["title"]
         except KeyError as e:
             print(row)
             exit()
 
-        del obj["title"]
 
         para = ""
 
@@ -228,7 +235,6 @@ def preprocess_roberta(data, args):
     # Initialize dictionary to store processed information
     keys = ["uid", "encodings", "attention_mask", "segments", "labels"]
     data_dict = {key: [] for key in keys}
-    result = []
     samples_processed = 0
     # Iterate over all data points
     for pt_dict in data:
@@ -346,7 +352,7 @@ def train_data(train_data, dev_data, test_data, args):
     train_enc = torch.tensor(train_data["encodings"]).cuda()
     train_attention_mask = torch.tensor(train_data["attention_mask"]).cuda()
     train_segs = torch.tensor(train_data["segments"]).cuda()
-    train_labs = torch.tensor(train_data["labels"]).cuda()
+    train_labs = torch.tensor(train_data["labels"]).cuda().long()
     train_ids = torch.tensor(train_data["uid"]).cuda()
 
     accelerator = Accelerator()
@@ -432,7 +438,7 @@ def test_data(data, args):
     # Intialize model
     model = AutoModel.from_pretrained(args.model_type).cuda()
     embed_size = model.config.hidden_size
-    classifier = FeedForward(embed_size, int(embed_size / 2), 2).cuda()
+    classifier = FeedForward(embed_size, int(embed_size / 2), args.num_labels).cuda()
 
     # Load pre-trained models
     checkpoint = torch.load(os.path.join(args.output_dir, args.model_name))
@@ -450,6 +456,10 @@ def test_data(data, args):
 
 @dataclass
 class DataArguments:
+    dataset: str = field(
+        default="clapika2010/totto_processed", metadata={"help": "Dataset to use"}
+    )
+
     train_file: str = field(
         default="data/train.json",
         metadata={"help": "The path to train data file"},
@@ -513,21 +523,23 @@ if __name__ == "__main__":
 
     wandb.init(project="seed", entity="clapika", name="infotab")
     # print("Reading datasets")
-    train_dataset = TableNLIUltis.from_jsonlines(args.train_file, cache_dir=args.cache_dir, output_format="infotab")["train"]
-    dev_dataset = TableNLIUltis.from_jsonlines(args.dev_file, cache_dir=args.cache_dir, output_format="infotab")["train"]
+    if Path("temp/infotab_infotab/train.json").exists():
+        train_dataset = json.load((Path("temp/infotab_infotab/train.json")).open())
+        dev_dataset = json.load((Path("temp/infotab_infotab/dev.json")).open())
+    else:
+        datasets = TableNLIUltis.from_jsonlines(args.dataset, output_format="infotab")
+        train_dataset, dev_dataset = datasets["train"], datasets["dev"]
 
-    train_dataset.save_to_disk("temp/infotab/train")
-    dev_dataset.save_to_disk("temp/infotab/dev")
-    datasets = [train_dataset, dev_dataset]
-    for idx in range(2):
-        print("Processing dataset ...")
-        datasets[idx] = json_to_para(datasets[idx], args)
-        datasets[idx] = preprocess_roberta(datasets[idx], args)
+        datasets = [train_dataset, dev_dataset]
+        for idx in range(2):
+            print("Processing dataset ...")
+            datasets[idx] = json_to_para(datasets[idx], args)
+            datasets[idx] = preprocess_roberta(datasets[idx], args)
 
-    print("Training ...")
-    train_dataset, dev_dataset = datasets
-    json.dump(train_dataset, open("temp/infotab/train.json", "w"))
-    json.dump(dev_dataset, open("temp/infotab/dev.json", "w"))
+        print("Training ...")
+        train_dataset, dev_dataset = datasets
+        json.dump(train_dataset, open("temp/infotab_infotab/train.json", "w"))
+        json.dump(dev_dataset, open("temp/infotab_infotab/dev.json", "w"))
     # train_dataset = json.load(open("temp/infotab/train.json", "r"))
     # dev_dataset = json.load(open("temp/infotab/dev.json", "r"))
     train_data(train_dataset, dev_dataset, dev_dataset, args)
