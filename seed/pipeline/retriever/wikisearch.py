@@ -24,10 +24,15 @@ class WikiRetriever:
         sentence = Sentence(query)
         self.ner.predict(sentence)
 
+        entity_count = 0
         for entity in sentence.get_spans('ner'):
-            print(entity.text)
+            entity_count += 1
             ms = ms.add(Search().query("match", title=entity.text))
 
+        if entity_count == 0:
+            for value in df.values.flatten().tolist():
+                ms = ms.add(Search().query("match", title=value))
+        
         responses = ms.execute()
         result = []
         for response in responses:

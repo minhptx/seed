@@ -28,25 +28,28 @@ price-parser = "^0.3.4"
 number-parser = "^0.2.1"
 nltk = "^3.7"
 pytorch-lightning = "^1.6.4"
-<<<<<<< HEAD
-torchvision = "0.12.0+cu113"
 sentence-transformers = "^2.2.2"
 gradio = "^3.0.24"
 colorama = "^0.4.5"
 mwparserfromhell = "^0.6.4"
+hydra-core = "^1.2.0"
+pyrootutils = "^1.0.4"
+lightning-transformers = "^0.2.1"
+loguru = "^0.6.0"
+dill = "0.3.4"
+torch="*"
 
-=======
->>>>>>> a46888adae3f322224e6354ce8244ac5ab226da5
 
 [tool.poetry.dev-dependencies]
 black = "^22.3.0"
+
+[tool.poetry.group.dev.dependencies]
+poethepoet = "^0.16.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
-
-[[tool.poetry.source]]
-name = "torch"
-url = "https://download.pytorch.org/whl/cu113/"
-secondary = true
+[tool.poe.tasks]
+torch-cuda102 = "pip install torch==1.12.0+cu102 torchvision==0.13.0+cu102 torchaudio==0.12.0 --extra-index-url https://download.pytorch.org/whl/cu102"
+torch-cuda113 = "pip install torch==1.12.0+cu113 torchvision==0.13.0+cu113 torchaudio==0.12.0 --extra-index-url https://download.pytorch.org/whl/cu113"

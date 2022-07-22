@@ -1,4 +1,4 @@
-from seed.retriever.wikisearch import WikiRetriever
+from .wikisearch import WikiRetriever
 from .dpr import DPRRetriever
 
 class Retriever:

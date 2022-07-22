@@ -23,11 +23,11 @@ nlp = spacy.load("en_core_web_sm")
 @dataclass
 class Argument:
     input_path: str = field(
-        default="data/totto/totto_train_data_processed.jsonl",
+        default="data/totto/train_processed.jsonl",
         metadata={"help": "Path to the input file"},
     )
     output_path: str = field(
-        default="data/totto/totto_train.jsonl",
+        default="data/totto/train_triplet.jsonl",
         metadata={"help": "Path to the output file"},
     )
     cache_file: str = field(

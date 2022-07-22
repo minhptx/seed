@@ -7,18 +7,19 @@ class Pipeline:
         self.retriever = retriever
         self.verifier = verifier
         self.extractor = extractor
-        self.entity_linker = EntityLinker()
+        # self.entity_linker = EntityLinker()
 
     def run(self, df):
         documents = self.retriever.search(df)
 
-        relevant_sentences = []
-        table_entities = list(self.entity_linker.link_entities(" and ".join(df.values.flatten().tolist())))
+        # relevant_sentences = []
+        # table_entities = list(self.entity_linker.link_entities(" and ".join(df.values.flatten().tolist())))
+
+        column2error = {}
 
         for document in documents:
-            title = document["title"]
+            # title = document["title"]
             text = document["text"]
-<<<<<<< HEAD
             for sentences in re.split(r"\n|\*|(===)|(==)", text):
                 if sentences is None:
                     continue
@@ -26,28 +27,19 @@ class Pipeline:
                     if sentence is None or len(sentence) < 10:
                         continue
                     
-                    sent_entities = list(self.entity_linker.link_entities(sentence))
-                    if len(set(sent_entities).intersection(set(table_entities))) == 0:
-                        continue
-                    relevant_sentences.append(sentence)
                     column2res = self.verifier.verify(sentence, df)
-                    print(f"Title: {title} --- Sentence: '{sentence}' --- Label: {column2res}")
-=======
-            sentence = text
-            # sentences = text_to_sentences(text).split("\n")
-            # for sentence in sentences:
-            #     print(sentence)
-            #     print(df)
-            #     print("----------------------------------------------")
-            is_verified, prob = self.verifier.verify(sentence, df)
-            relevant_sentences.append({"title": title, "text": sentence, "is_verified": is_verified, "prob": prob})
-
-        erroneous_cells = []
-        for relevant_sentence in relevant_sentences:
-            for column in df:
-                compare = self.extractor.compare(relevant_sentence["text"], df[column].values.tolist()[0], df, column)
-                if not compare: 
-                    erroneous_cells.append({"title": relevant_sentence["title"], "text": relevant_sentence["text"], "column": column})
->>>>>>> a46888adae3f322224e6354ce8244ac5ab226da5
-                
-        return []
+                    # print(f"Title: {title} --- Sentence: '{sentence}' --- Label: {column2res}")
+                    if column2res is None:
+                        continue
+                    for column, res in column2res.items():
+                        if res:
+                            column2error[column] = res[1]
+                        else:
+                            column2error[column] = 0
+        
+        if not column2error:
+            return None
+        column = sorted(column2error.items(), key=lambda x: x[1], reverse=True)[0][0]
+        if column2error[column] == 0:
+            return None
+        return column

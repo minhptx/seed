@@ -38,7 +38,7 @@ import sys
 import torch
 import pandas as pd
 import wandb
-import datetime
+from datetime import datetime
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -228,6 +228,8 @@ def main():
             project="seed",
             entity="clapika",
             name=datetime.now().strftime("bart " + "_%Y%m%d-%H%M%S"),
+            group="bart",
+            config={"dataset": data_args.dataset}
         )
 
     # Load pretrained model and tokenizer
@@ -260,7 +262,7 @@ def main():
     with training_args.main_process_first():
         datasets = TableNLIUltis.from_jsonlines(
             data_args.dataset
-        ).map(lambda x: process_table(x, tokenizer), num_proc=24)
+        )
 
         # datasets.push_to_hub(data_args.dataset + "_processed") 
         train_dataset, val_dataset, predict_datasets = datasets["train"], datasets["dev"], [datasets[split] for split in data_args.test_splits]
@@ -336,13 +338,12 @@ def main():
                 # Removing the `label` columns because it contains -1 and Trainer won't like that.
                 for idx, predict_dataset in enumerate(predict_datasets):
                     outputs = trainer.predict(predict_dataset, ignore_keys=["encoder_last_hidden_state"])
-                    all_predictions = outputs.predictions[0]
+                    all_predictions = outputs.predictions
                     metrics = outputs.metrics
                     trainer.log_metrics(f"test_{idx}", metrics)
                     trainer.save_metrics(f"test_{idx}", metrics)
                     wandb.log({f"test_{idx}/accuracy": metrics["test_accuracy"]})
                     predictions = np.argmax(all_predictions, axis=-1)
-
 
                     logger.info(f"***** Predict Results *****")
                     for index, item in enumerate(predictions):

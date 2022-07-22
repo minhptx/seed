@@ -164,6 +164,7 @@ class ModelArguments:
             "with private models)."
         },
     )
+    
 
 
 def process_table(item, tokenizer):
@@ -218,6 +219,8 @@ def main():
             project="seed",
             entity="clapika",
             name=datetime.now().strftime("bart " + "_%Y%m%d-%H%M%S"),
+            group="bart",
+            config={"dataset": data_args.dataset}
         )
 
     # Load pretrained model and tokenizer

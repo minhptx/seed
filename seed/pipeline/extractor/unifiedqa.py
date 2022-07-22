@@ -76,12 +76,7 @@ class UQAExtractor:
         elif type == "MISC":
             question = f"Which {column}?"
 
-<<<<<<< HEAD:seed/pipeline/extractor/unifiedqa.py
         print(question, sentence)
-=======
-        print(question)
-        print(df)
->>>>>>> a46888adae3f322224e6354ce8244ac5ab226da5:seed/extractor/unifiedqa.py
         return self.run_unifiedqa(f"{question} \\n {sentence}")
         
     def compare(self, sentence, value, df, column):
