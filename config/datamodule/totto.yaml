@@ -1,11 +1,10 @@
 _target_: seed.lightning.data_module.PLDataModule
 model_name_or_path: ${model.model_name_or_path}
 num_labels: 2
-dataset: clapika2010/totto
+dataset: clapika2010/totto2
 processed: False
 train_batch_size: 128
 eval_batch_size: 128
-fingerprint: seed_1285
 eval_splits:
   - dev
 test_splits:

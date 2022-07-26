@@ -1,13 +1,12 @@
 _target_: seed.lightning.data_module.PLDataModule
-dataset: clapika2010/infotab2
-num_labels: 3
 model_name_or_path: ${model.model_name_or_path}
+num_labels: 2
+dataset: clapika2010/totto_triplet
 processed: False
-train_batch_size: 32
-eval_batch_size: 32
+train_batch_size: 128
+eval_batch_size: 128
+fingerprint: seed_1285
 eval_splits:
   - dev
 test_splits:
-  - test1
-  - test2
-  - test3
+  - dev

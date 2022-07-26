@@ -27,7 +27,7 @@ class Argument:
         metadata={"help": "Path to the input file"},
     )
     output_path: str = field(
-        default="data/totto/train_triplet.jsonl",
+        default="data/totto/train_new.jsonl",
         metadata={"help": "Path to the output file"},
     )
     cache_file: str = field(
@@ -83,15 +83,7 @@ def replace_sentence(sentence, text):
 
 def linearize_table(obj):
     table = pd.DataFrame([obj])
-    for column in table.columns:
-        table[column] = table[column].apply(
-            lambda x: f"{column} : {' , '.join(x) if isinstance(x, list) else x}"
-        )
-
-    linearized_table = " ; ".join(
-        table.apply(lambda x: " ; ".join(x), axis=1).values.tolist()
-    )
-    return linearized_table
+    return table.to_json(orient="records")
 
 
 def generate_negative_examples(obj, replacements, main_column, sentence, title):
@@ -101,23 +93,35 @@ def generate_negative_examples(obj, replacements, main_column, sentence, title):
         false_sentence = replace_sentence(sentence, text)
     false_table = replace_table(obj, replacements, main_column)
     examples = []
-    if false_sentence is not None:
-        examples.append(
+    examples.append(
             {
-                "anchor": linearize_table(obj),
-                "positive": sentence,
-                "negative": false_sentence,
+                "table": linearize_table(obj),
+                "sentence": sentence,
+                "label": True,
+                "title": title,
+            }
+        )
+    falses = []
+    if false_sentence is not None:
+        falses.append(
+            {
+                "table": linearize_table(obj),
+                "sentence": false_sentence,
+                "label": False,
+                "title": title,
             }
         )
     if false_table is not None:
-        examples.append(
+        falses.append(
             {
-                "anchor": sentence,
-                "positive": linearize_table(obj),
-                "negative": linearize_table(false_table),
+                "table": linearize_table(false_table),
+                "sentence": sentence,
+                "label": False,
+                "title": title,
             }
         )
-
+    if falses:
+        examples.append(random.choice(falses))
     return examples
 
 
@@ -125,7 +129,7 @@ def filter_table(table, sample):
     if (
         len(table.columns) == 0
         or len(table) == 0
-        or len(sample["highlighted_cells"]) == 0
+        or len(sample["highlighted_cells"]) <= 1
     ):
         return False
     rows = set([x[0] for x in sample["highlighted_cells"]])
@@ -193,6 +197,7 @@ if __name__ == "__main__":
         with jsonlines.open(args.output_path, mode="w") as writer:
             for result in results:
                 if result:
+                    print(len(result), result)
                     for res in result:
                         if res:
                             writer.write(res)

@@ -40,8 +40,7 @@ if __name__ == "__main__":
                 else 1
                 if row["label"] == "N"
                 else 2,
-                "highlighted_cells": [[0, x] for x in range(len(name2table[row["table_id"]][0]))],
-                "table_page_title": name2table[row["table_id"]][0]["title"][0],
+                "title": name2table[row["table_id"]][0]["title"][0],
             }
             split2examples[csv_file.stem.replace("infotabs_", "")].append(example)
 

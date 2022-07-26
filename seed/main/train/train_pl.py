@@ -9,12 +9,12 @@ from omegaconf import DictConfig
 from pytorch_lightning import Callback, LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import LightningLoggerBase
 
-import utils
+import seed.utils as utils
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 root = pyrootutils.setup_root(
-    os.path.join(__file__, "../.."), dotenv=True, pythonpath=True
+    os.path.join(__file__, "../../../../"), dotenv=True, pythonpath=True
 )
 log = utils.get_pylogger(__name__)
 

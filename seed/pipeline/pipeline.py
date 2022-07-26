@@ -18,7 +18,7 @@ class Pipeline:
         column2error = {}
 
         for document in documents:
-            # title = document["title"]
+            title = document["title"]
             text = document["text"]
             for sentences in re.split(r"\n|\*|(===)|(==)", text):
                 if sentences is None:
@@ -28,7 +28,7 @@ class Pipeline:
                         continue
                     
                     column2res = self.verifier.verify(sentence, df)
-                    # print(f"Title: {title} --- Sentence: '{sentence}' --- Label: {column2res}")
+                    print(f"Title: {title} --- Sentence: '{sentence}' --- Label: {column2res}")
                     if column2res is None:
                         continue
                     for column, res in column2res.items():

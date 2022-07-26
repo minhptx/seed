@@ -46,21 +46,21 @@ def preprocess(sample):
     for i, j in sample["highlighted_cells"]:
         example[table.columns[j]].append(table.iloc[i, j])
         new_example[table.columns[j]].append(new_sample.iloc[i, j])
-    return {"table": example, "label": True, "counter_fact": ""}, {"table": new_example, "label": False, "counter_fact": counter_fact}
+    return {"table": example, "label": True, "counter_fact": "", "title": sample["table_page_title"]}, {"table": new_example, "label": False, "counter_fact": counter_fact, "title": sample["table_page_title"]}
 
 
 @dataclass
 class Argument:
     input_path: str = field(
-        default="data/totto/totto_train_data_processed.jsonl",
+        default="data/totto/dev_processed.jsonl",
         metadata={"help": "Path to the input file"},
     )
     output_path: str = field(
-        default="data/totto/totto_test.jsonl",
+        default="data/totto/test.jsonl",
         metadata={"help": "Path to the output file"},
     )
     cache_file: str = field(
-        default=".cache/title2text.json",
+        default=".cache/dev_title2text.json",
         metadata={"help": "Path to cache file"},
     )
     filter: bool = field(
@@ -114,6 +114,7 @@ if __name__ == "__main__":
         results = pool.imap_unordered(
             preprocess, reader.iter(type=dict, skip_invalid=True)
         )
+        pool.close()
 
         with jsonlines.open(args.output_path, mode="w") as writer:
             for result in results:

@@ -1,9 +1,9 @@
 defaults:
   - model: bart-large-mnli
   - datamodule: totto
-  - callbacks: model_checkpoint
+  - callbacks: defaults
   - logger: wandb
-  - paths: default
+  - paths: defaults
   - trainer: gpu
 train: True
 evaluate: True

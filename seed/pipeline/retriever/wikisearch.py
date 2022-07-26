@@ -25,19 +25,25 @@ class WikiRetriever:
         self.ner.predict(sentence)
 
         entity_count = 0
+        entities = []
         for entity in sentence.get_spans('ner'):
             entity_count += 1
             ms = ms.add(Search().query("match", title=entity.text))
+            entities.append(entity.text)
 
-        if entity_count == 0:
-            for value in df.values.flatten().tolist():
+
+        for value in df.values.flatten().tolist():
+            if value not in entities:
                 ms = ms.add(Search().query("match", title=value))
         
         responses = ms.execute()
         result = []
+        titles = set()
         for response in responses:
             if not response.hits:
                 continue
-            result.append({"title": response.hits[0]["title"], "text": wtp.remove_markup(response.hits[0]["text"])})
+            if  response.hits[0]["title"] not in titles:
+                result.append({"title": response.hits[0]["title"], "text": wtp.remove_markup(response.hits[0]["text"])})
+                titles.add(response.hits[0]["title"])
 
         return result

@@ -1,0 +1,3 @@
+defaults:
+  - model_checkpoint_acc.yaml
+  - model_checkpoint_loss.yaml

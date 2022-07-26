@@ -7,13 +7,19 @@ from pytorch_lightning import (
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 import multiprocessing
+import pandas as pd
+import json
+from pathlib import Path
+from json.decoder import JSONDecodeError
 
 
 class PLDataModule(LightningDataModule):
 
     dataset_text_field_map = {
         "clapika2010/totto": ["sentence", "table"],
+        "clapika2010/totto2": ["sentence", "table"],
         "clapika2010/infotab": ["sentence", "table"],
+        "clapika2010/infotab2": ["sentence", "table"],
         "clapika2010/totto_triplet": ["anchor", "positive", "negative"],
     }
 
@@ -61,7 +67,7 @@ class PLDataModule(LightningDataModule):
             batched=True,
             remove_columns=["label"],
             num_proc=20,
-            cache_file_names = {"train": ".cache/huggingface/cache_train.arrow", "dev": ".cache/huggingface/cache_dev.arrow"}
+            cache_file_names = {x: f".cache/huggingface/{self.dataset_name}/cache_{x}.arrow" for x in self.dataset}
         )
         for split in self.dataset.keys():
             self.columns = [
@@ -72,12 +78,13 @@ class PLDataModule(LightningDataModule):
 
     def prepare_data(self):
         dataset = datasets.load_dataset(self.dataset_name)
+        Path(f".cache/huggingface/{self.dataset_name}").mkdir(parents=True, exist_ok=True)
         dataset.map(
             self.convert_to_features,
             batched=True,
             remove_columns=["label"],
             num_proc=20,
-            cache_file_names = {"train": ".cache/huggingface/cache_train.arrow", "dev": ".cache/huggingface/cache_dev.arrow"}
+            cache_file_names = {x: f".cache/huggingface/{self.dataset_name}/cache_{x}.arrow" for x in dataset}
         )
         AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
 
@@ -124,8 +131,38 @@ class PLDataModule(LightningDataModule):
             ]
 
     def convert_to_features(self, example_batch, indices=None):
+        for key in self.text_fields:
+            if not example_batch[key]:
+                continue
+            try:
+                result = []
+                for obj in example_batch[key]:
+                    table = json.loads(obj)
+                    table = pd.DataFrame(table)
+                    for column in table.columns:
+                        table[column] = table[column].apply(lambda x: f"{column} : {' , '.join(x) if isinstance(x, list) else x}")
+                    
+                    result.append(self.tokenizer.sep_token.join(
+                        table.apply(lambda x: " ; ".join(x), axis=1).values.tolist()
+                    ))
+                example_batch[key] = result
+            except JSONDecodeError:
+                continue
+
         # Either encode single sentence or sentence pairs
-        if len(self.text_fields) > 1:
+        if len(self.text_fields) == 3:
+            texts_or_text_pairs = (list(
+                zip(
+                    example_batch[self.text_fields[0]],
+                    example_batch[self.text_fields[1]],
+                )
+            ), list(
+                zip(
+                    example_batch[self.text_fields[1]],
+                    example_batch[self.text_fields[2]],
+                )
+            ))
+        elif len(self.text_fields) > 1:
             texts_or_text_pairs = list(
                 zip(
                     example_batch[self.text_fields[0]],
@@ -136,15 +173,35 @@ class PLDataModule(LightningDataModule):
             texts_or_text_pairs = example_batch[self.text_fields[0]]
 
         # Tokenize the text/text pairs
-        features = self.tokenizer(
-            texts_or_text_pairs,
-            max_length=self.max_seq_length,
-            padding=True,
-            truncation=True,
-        )
+        print("TYPEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE", type(texts_or_text_pairs))
+        if isinstance(texts_or_text_pairs, tuple):
+            positives = self.tokenizer(
+                texts_or_text_pairs[0],
+                max_length=self.max_seq_length,
+                padding=True,
+                truncation=True,
+            )
+            negatives = self.tokenizer(
+                texts_or_text_pairs[1],
+                max_length=self.max_seq_length,
+                padding=True,
+                truncation=True,
+            )
+            print("Positives", positives)
+            print("Negatives", negatives)
+            for key, value in positives.keys():
+                positives[key] = [positives[key], negatives[key]]
+            return positives
+        else:
+            features = self.tokenizer(
+                texts_or_text_pairs,
+                max_length=self.max_seq_length,
+                padding=True,
+                truncation=True,
+            )
 
         # Rename label to labels to make it easier to pass to model forward
-        features["labels"] = example_batch["label"]
 
-        # print(features)
-        return features
+            features["labels"] = example_batch["label"]
+
+            return features

@@ -54,6 +54,19 @@ class PLTransformer(LightningModule):
     def forward(self, **inputs):
         return self.model(**{k: v.long() for k, v in inputs.items()})
 
+    def verify(self, batch, batch_idx, dataloader_idx=0):
+        outputs = self(**batch)
+        test_loss, logits = outputs[:2]
+
+        if self.hparams.num_labels > 1:
+            preds = torch.argmax(logits, axis=1)
+        elif self.hparams.num_labels == 1:
+            preds = logits.squeeze()
+
+        labels = batch["labels"]
+
+        return {"loss": test_loss, "preds": preds, "labels": labels}
+
     def training_step(self, batch, batch_idx):
         outputs = self(**batch)
         
@@ -88,6 +101,15 @@ class PLTransformer(LightningModule):
 
         return {"loss": val_loss, "preds": preds, "labels": labels}
 
+
+    def validation_epoch_end(self, outputs):
+        preds = torch.cat([x["preds"] for x in outputs])
+        labels = torch.cat([x["labels"] for x in outputs])
+        loss = torch.stack([x["loss"] for x in outputs]).mean()
+        self.log("val_loss", loss, prog_bar=True)
+        for name, metric in self.metrics["val"].items():
+            self.log(f"val_{name}", metric(preds, labels), prog_bar=True)
+
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
         test_loss, logits = outputs[:2]
@@ -101,13 +123,16 @@ class PLTransformer(LightningModule):
 
         return {"loss": test_loss, "preds": preds, "labels": labels}
 
-    def validation_epoch_end(self, outputs):
+
+    def test_epoch_end(self, outputs) -> None:
         preds = torch.cat([x["preds"] for x in outputs])
         labels = torch.cat([x["labels"] for x in outputs])
         loss = torch.stack([x["loss"] for x in outputs]).mean()
-        self.log("val_loss", loss, prog_bar=True)
+        self.log("test_loss", loss, prog_bar=True)
         for name, metric in self.metrics["val"].items():
-            self.log(f"val_{name}", metric(preds, labels), prog_bar=True)
+            self.log(f"test_{name}", metric(preds, labels), prog_bar=True)
+
+
 
     def configure_optimizers(self):
         """Prepare optimizer and schedule (linear warmup and decay)"""
