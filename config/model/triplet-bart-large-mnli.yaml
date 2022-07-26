@@ -1,0 +1,7 @@
+_target_: seed.lightning.triplet_module.TripletPLTransformer
+model_name_or_path: facebook/bart-large-mnli
+num_labels: ${datamodule.num_labels}
+learning_rate: 2.0e-5
+adam_epsilon: 1.0e-8
+warmup_steps: 0
+weight_decay: 0.0

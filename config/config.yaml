@@ -1,0 +1,10 @@
+defaults:
+  - model: bart-large-mnli
+  - datamodule: totto
+  - callbacks: defaults
+  - logger: wandb
+  - paths: defaults
+  - trainer: gpu
+train: True
+evaluate: True
+predict: True

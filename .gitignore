@@ -5,3 +5,6 @@ wandb/
 models/
 /temp
 /saved_models
+*.log
+.hydra/
+outputs/
