@@ -129,9 +129,8 @@ class PLTransformer(LightningModule):
         labels = torch.cat([x["labels"] for x in outputs])
         loss = torch.stack([x["loss"] for x in outputs]).mean()
         self.log("test_loss", loss, prog_bar=True)
-        for name, metric in self.metrics["val"].items():
+        for name, metric in self.metrics["test"].items():
             self.log(f"test_{name}", metric(preds, labels), prog_bar=True)
-
 
 
     def configure_optimizers(self):
