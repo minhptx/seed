@@ -52,33 +52,39 @@ class TripletPLTransformer(LightningModule):
         
 
     def training_step(self, batch, batch_idx):
-        print("Batch", batch)
-        outputs1 = self(**batch[0])
-        outputs2 = self(**batch[1])
-        loss = torch.softmax(outputs1, dim=1) - torch.softmax(outputs2, dim=2) + self.hparams.margin
+        outputs1 = self(**{k.replace("positive_", ""): v for k, v in batch.items() if "positive_" in k})
+        outputs2 = self(**{k.replace("negative_", ""): v for k, v in batch.items() if "negative_" in k})
+        preds = torch.softmax(outputs1.logits, dim=1)[:, 0] - torch.softmax(outputs2.logits, dim=1)[:, 0] + self.hparams.margin
+        loss = preds.mean()        
         self.log("train_loss", loss, on_step=True, on_epoch=False)
 
-        return {"loss": loss}
+        return {"loss": loss, "preds": preds}
 
-    def training_step_end(self, step_output):
+    def training_step_end(self, outputs):
+        preds = outputs["preds"]
         for name, metric in self.metrics["train"].items():
-            self.log(
-                f"train_{name}",
-                metric(step_output["loss"] > 0, torch.tensor([1])),
-                on_step=True,
-                on_epoch=True,
-            )
-        return step_output['loss'].sum()
+            self.log(f"train_{name}", metric(preds, torch.ones_like(preds).long()), prog_bar=True)
+
+        return outputs['loss'].sum()
+
 
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        print("Batch", batch)
-        outputs1 = self(**batch[0])
-        outputs2 = self(**batch[1])
-        loss = torch.softmax(outputs1, dim=1) - torch.softmax(outputs2, dim=2) + self.hparams.margin
-        self.log("train_loss", loss, on_step=True, on_epoch=False)
+        outputs1 = self(**{k.replace("positive_", ""): v for k, v in batch.items() if "positive_" in k})
+        outputs2 = self(**{k.replace("negative_", ""): v for k, v in batch.items() if "negative_" in k})
+        preds = torch.softmax(outputs1.logits, dim=1)[:, 0] - torch.softmax(outputs2.logits, dim=1)[:, 0] + self.hparams.margin
+        loss = preds.mean()        
+        self.log("val_loss", loss, on_step=True, on_epoch=False)
 
-        return {"loss": loss}
+        return {"loss": loss, "preds": preds}
+
+    def validation_epoch_end(self, outputs):
+        print("Batch", outputs)
+        loss = torch.stack([x["loss"] for x in outputs]).mean()
+        preds = torch.stack([x["preds"] for x in outputs])
+        self.log("val_loss", loss, prog_bar=True)
+        for name, metric in self.metrics["val"].items():
+            self.log(f"val_{name}", metric(preds, torch.ones_like(preds).long()), prog_bar=True)
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
@@ -93,12 +99,6 @@ class TripletPLTransformer(LightningModule):
 
         return {"loss": test_loss, "preds": preds, "labels": labels}
 
-    def validation_epoch_end(self, outputs):
-        print("Batch", outputs)
-        loss = torch.stack([x["loss"] for x in outputs]).mean()
-        self.log("val_loss", loss, prog_bar=True)
-        for name, metric in self.metrics["val"].items():
-            self.log(f"val_{name}", metric(outputs["loss"] > 0, torch.tensor([1])), prog_bar=True)
 
     def configure_optimizers(self):
         """Prepare optimizer and schedule (linear warmup and decay)"""

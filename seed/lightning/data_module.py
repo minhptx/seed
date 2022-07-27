@@ -1,9 +1,7 @@
 from typing import Optional
 
 import datasets
-from pytorch_lightning import (
-    LightningDataModule
-)
+from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 import multiprocessing
@@ -21,6 +19,14 @@ class PLDataModule(LightningDataModule):
         "clapika2010/infotab": ["sentence", "table"],
         "clapika2010/infotab2": ["sentence", "table"],
         "clapika2010/totto_triplet": ["anchor", "positive", "negative"],
+    }
+
+    dataset_remove_columns = {
+        "clapika2010/totto": ["label"],
+        "clapika2010/totto2": ["label"],
+        "clapika2010/infotab": ["label"],
+        "clapika2010/infotab2": ["label"],
+        "clapika2010/totto_triplet": [],
     }
 
     loader_columns = [
@@ -65,26 +71,37 @@ class PLDataModule(LightningDataModule):
         self.dataset = self.dataset.map(
             self.convert_to_features,
             batched=True,
-            remove_columns=["label"],
+            remove_columns=self.dataset_remove_columns[self.dataset_name],
             num_proc=20,
-            cache_file_names = {x: f".cache/huggingface/{self.dataset_name}/cache_{x}.arrow" for x in self.dataset}
+            cache_file_names={
+                x: f".cache/huggingface/{self.dataset_name}/cache_{x}.arrow"
+                for x in self.dataset
+            },
         )
         for split in self.dataset.keys():
             self.columns = [
-                c for c in self.dataset[split].column_names if c in self.loader_columns
+                c
+                for c in self.dataset[split].column_names
+                if c in self.loader_columns
+                or c.replace("positive_", "") in self.loader_columns
+                or c.replace("negative_", "") in self.loader_columns
             ]
             self.dataset[split].set_format(type="torch", columns=self.columns)
 
-
     def prepare_data(self):
         dataset = datasets.load_dataset(self.dataset_name)
-        Path(f".cache/huggingface/{self.dataset_name}").mkdir(parents=True, exist_ok=True)
+        Path(f".cache/huggingface/{self.dataset_name}").mkdir(
+            parents=True, exist_ok=True
+        )
         dataset.map(
             self.convert_to_features,
             batched=True,
-            remove_columns=["label"],
+            remove_columns=self.dataset_remove_columns[self.dataset_name],
             num_proc=20,
-            cache_file_names = {x: f".cache/huggingface/{self.dataset_name}/cache_{x}.arrow" for x in dataset}
+            cache_file_names={
+                x: f".cache/huggingface/{self.dataset_name}/cache_{x}.arrow"
+                for x in dataset
+            },
         )
         AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
 
@@ -93,7 +110,7 @@ class PLDataModule(LightningDataModule):
             self.dataset["train"],
             batch_size=self.train_batch_size,
             shuffle=True,
-            num_workers=multiprocessing.cpu_count()
+            num_workers=multiprocessing.cpu_count(),
         )
 
     def val_dataloader(self):
@@ -101,14 +118,14 @@ class PLDataModule(LightningDataModule):
             return DataLoader(
                 self.dataset[self.eval_splits[0]],
                 batch_size=self.eval_batch_size,
-                num_workers=multiprocessing.cpu_count()
+                num_workers=multiprocessing.cpu_count(),
             )
         elif len(self.eval_splits) > 1:
             return [
                 DataLoader(
                     self.dataset[x],
                     batch_size=self.eval_batch_size,
-                    num_workers=multiprocessing.cpu_count()
+                    num_workers=multiprocessing.cpu_count(),
                 )
                 for x in self.eval_splits
             ]
@@ -118,14 +135,14 @@ class PLDataModule(LightningDataModule):
             return DataLoader(
                 self.dataset[self.test_splits[0]],
                 batch_size=self.eval_batch_size,
-                num_workers=multiprocessing.cpu_count()
+                num_workers=multiprocessing.cpu_count(),
             )
         elif len(self.test_splits) > 1:
             return [
                 DataLoader(
                     self.dataset[x],
                     batch_size=self.eval_batch_size,
-                    num_workers=multiprocessing.cpu_count()
+                    num_workers=multiprocessing.cpu_count(),
                 )
                 for x in self.test_splits
             ]
@@ -140,28 +157,35 @@ class PLDataModule(LightningDataModule):
                     table = json.loads(obj)
                     table = pd.DataFrame(table)
                     for column in table.columns:
-                        table[column] = table[column].apply(lambda x: f"{column} : {' , '.join(x) if isinstance(x, list) else x}")
-                    
-                    result.append(self.tokenizer.sep_token.join(
-                        table.apply(lambda x: " ; ".join(x), axis=1).values.tolist()
-                    ))
+                        table[column] = table[column].apply(
+                            lambda x: f"{column} : {' , '.join(x) if isinstance(x, list) else x}"
+                        )
+
+                    result.append(
+                        self.tokenizer.sep_token.join(
+                            table.apply(lambda x: " ; ".join(x), axis=1).values.tolist()
+                        )
+                    )
                 example_batch[key] = result
             except JSONDecodeError:
                 continue
 
         # Either encode single sentence or sentence pairs
         if len(self.text_fields) == 3:
-            texts_or_text_pairs = (list(
-                zip(
-                    example_batch[self.text_fields[0]],
-                    example_batch[self.text_fields[1]],
-                )
-            ), list(
-                zip(
-                    example_batch[self.text_fields[1]],
-                    example_batch[self.text_fields[2]],
-                )
-            ))
+            texts_or_text_pairs = (
+                list(
+                    zip(
+                        example_batch[self.text_fields[0]],
+                        example_batch[self.text_fields[1]],
+                    )
+                ),
+                list(
+                    zip(
+                        example_batch[self.text_fields[1]],
+                        example_batch[self.text_fields[2]],
+                    )
+                ),
+            )
         elif len(self.text_fields) > 1:
             texts_or_text_pairs = list(
                 zip(
@@ -173,7 +197,6 @@ class PLDataModule(LightningDataModule):
             texts_or_text_pairs = example_batch[self.text_fields[0]]
 
         # Tokenize the text/text pairs
-        print("TYPEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE", type(texts_or_text_pairs))
         if isinstance(texts_or_text_pairs, tuple):
             positives = self.tokenizer(
                 texts_or_text_pairs[0],
@@ -187,11 +210,11 @@ class PLDataModule(LightningDataModule):
                 padding=True,
                 truncation=True,
             )
-            print("Positives", positives)
-            print("Negatives", negatives)
-            for key, value in positives.keys():
-                positives[key] = [positives[key], negatives[key]]
-            return positives
+            result = {}
+            for key in positives.data.keys():
+                result[f"positive_{key}"] = positives[key]
+                result[f"negative_{key}"] = negatives[key]
+            return result
         else:
             features = self.tokenizer(
                 texts_or_text_pairs,
@@ -200,7 +223,7 @@ class PLDataModule(LightningDataModule):
                 truncation=True,
             )
 
-        # Rename label to labels to make it easier to pass to model forward
+            # Rename label to labels to make it easier to pass to model forward
 
             features["labels"] = example_batch["label"]
 
