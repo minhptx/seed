@@ -8,7 +8,7 @@ import wikitextparser as wtp
 
 
 class WikiRetriever:
-    def __init__(self, mode="hybrid") -> None:
+    def __init__(self, mode="hybrid", cache_file="") -> None:
         connections.create_connection(hosts=["http://ckg05:9200/"], timeout=100)
 
         self.ner = SequenceTagger.load('ner')
@@ -18,8 +18,9 @@ class WikiRetriever:
         return {"title": title[1:-1], "text": content}
 
     def search(self, df, k: int = 10) -> list:
-        query = " and ".join(df.values.flatten().tolist())
+        query = " and ".join([x for x in df.values.flatten().tolist() if x])
         ms = MultiSearch(index="test_en")
+        ms = ms.add(Search().query("match", text=query))
 
         sentence = Sentence(query)
         self.ner.predict(sentence)
@@ -33,6 +34,8 @@ class WikiRetriever:
 
 
         for value in df.values.flatten().tolist():
+            # if value.isdigit():
+            #     continue
             if value not in entities:
                 ms = ms.add(Search().query("match", title=value))
         
@@ -42,8 +45,9 @@ class WikiRetriever:
         for response in responses:
             if not response.hits:
                 continue
-            if  response.hits[0]["title"] not in titles:
-                result.append({"title": response.hits[0]["title"], "text": wtp.remove_markup(response.hits[0]["text"])})
-                titles.add(response.hits[0]["title"])
+            for hit in response.hits:
+                if  hit["title"] not in titles:
+                    result.append({"title": hit["title"], "text": wtp.remove_markup(hit["text"])})
+                    titles.add(hit["title"])
 
         return result

@@ -24,14 +24,14 @@ class DPRRetriever:
         return {"title": title[1:-1], "text": content}
 
     def search(self, df, k: int = 10) -> list:
-        query = " and ".join([f"{x} is {y}" for x, y in df.to_dict(orient="records")[0].items() if all([not c.isdigit() for c in y])])
+        query = " and ".join([f"{x} is {y}" for x, y in df.to_dict(orient="records")[0].items() if y and all([not c.isdigit() for c in y])])
         docs = self.searcher.search(query, k)
         result = []
-        if self.mode == "sprase":
+        if self.mode == "sparse":
             for doc in docs:
                 result.append(self.process_content(doc.raw))
         elif self.mode == "hybrid":
             for doc in docs:
-                if doc.score > 80:
-                    result.append(self.process_content(self.ssearcher.doc(doc.docid).raw()))
+                res = self.process_content(self.ssearcher.doc(doc.docid).raw())
+                result.append(res)
         return result

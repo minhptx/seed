@@ -1,5 +1,4 @@
 from blingfire import text_to_sentences
-from seed.helpers.entity_linker import EntityLinker
 import re
 
 class Pipeline:
