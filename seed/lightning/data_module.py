@@ -110,7 +110,7 @@ class PLDataModule(LightningDataModule):
             self.dataset["train"],
             batch_size=self.train_batch_size,
             shuffle=True,
-            num_workers=multiprocessing.cpu_count(),
+            num_workers=4,
         )
 
     def val_dataloader(self):
@@ -118,14 +118,14 @@ class PLDataModule(LightningDataModule):
             return DataLoader(
                 self.dataset[self.eval_splits[0]],
                 batch_size=self.eval_batch_size,
-                num_workers=multiprocessing.cpu_count(),
+                num_workers=4,
             )
         elif len(self.eval_splits) > 1:
             return [
                 DataLoader(
                     self.dataset[x],
                     batch_size=self.eval_batch_size,
-                    num_workers=multiprocessing.cpu_count(),
+                    num_workers=4,
                 )
                 for x in self.eval_splits
             ]
@@ -135,14 +135,14 @@ class PLDataModule(LightningDataModule):
             return DataLoader(
                 self.dataset[self.test_splits[0]],
                 batch_size=self.eval_batch_size,
-                num_workers=multiprocessing.cpu_count(),
+                num_workers=4,
             )
         elif len(self.test_splits) > 1:
             return [
                 DataLoader(
                     self.dataset[x],
                     batch_size=self.eval_batch_size,
-                    num_workers=multiprocessing.cpu_count(),
+                    num_workers=4,
                 )
                 for x in self.test_splits
             ]
@@ -181,7 +181,7 @@ class PLDataModule(LightningDataModule):
                 ),
                 list(
                     zip(
-                        example_batch[self.text_fields[1]],
+                        example_batch[self.text_fields[0]],
                         example_batch[self.text_fields[2]],
                     )
                 ),

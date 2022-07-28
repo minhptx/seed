@@ -82,7 +82,6 @@ class TripletPLTransformer(LightningModule):
         return {"loss": loss, "preds": preds}
 
     def validation_epoch_end(self, outputs):
-        print("Batch", outputs)
         loss = torch.stack([x["loss"] for x in outputs]).mean()
         preds = torch.stack([x["preds"] for x in outputs])
         self.log("val_loss", loss, prog_bar=True)
