@@ -47,6 +47,10 @@ class TripletPLTransformer(LightningModule):
 
         self.metrics["val"] = {"acc": self.val_acc}
 
+        self.test_acc = torchmetrics.Accuracy(num_labels=num_labels)
+
+        self.metrics["test"] = {"acc": self.test_acc}
+
     def forward(self, **inputs):
         return self.model(**{k: v.long() for k, v in inputs.items()})
         
@@ -68,7 +72,6 @@ class TripletPLTransformer(LightningModule):
         return outputs['loss'].sum()
 
 
-
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         outputs1 = self(**{k.replace("positive_", ""): v for k, v in batch.items() if "positive_" in k})
         outputs2 = self(**{k.replace("negative_", ""): v for k, v in batch.items() if "negative_" in k})
@@ -87,18 +90,22 @@ class TripletPLTransformer(LightningModule):
             self.log(f"val_{name}", metric(preds, torch.ones_like(preds).long()), prog_bar=True)
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
-        outputs = self(**batch)
-        test_loss, logits = outputs[:2]
+        outputs1 = self(**{k.replace("positive_", ""): v for k, v in batch.items() if "positive_" in k})
+        outputs2 = self(**{k.replace("negative_", ""): v for k, v in batch.items() if "negative_" in k})
+        preds = torch.softmax(outputs1.logits, dim=1)[:, 0] - torch.softmax(outputs2.logits, dim=1)[:, 0] + self.hparams.margin
+        loss = preds.mean()        
+        self.log("test_loss", loss, on_step=True, on_epoch=False)
 
-        if self.hparams.num_labels > 1:
-            preds = torch.argmax(logits, axis=1)
-        elif self.hparams.num_labels == 1:
-            preds = logits.squeeze()
+        return {"loss": loss, "preds": preds}
 
-        labels = batch["labels"]
 
-        return {"loss": test_loss, "preds": preds, "labels": labels}
-
+    def test_epoch_end(self, outputs):
+        print("Batch", outputs)
+        loss = torch.stack([x["loss"] for x in outputs]).mean()
+        preds = torch.stack([x["preds"] for x in outputs])
+        self.log("test_loss", loss, prog_bar=True)
+        for name, metric in self.metrics["test"].items():
+            self.log(f"test_{name}", metric(preds, torch.ones_like(preds).long()), prog_bar=True)
 
     def configure_optimizers(self):
         """Prepare optimizer and schedule (linear warmup and decay)"""
