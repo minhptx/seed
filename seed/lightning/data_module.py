@@ -66,7 +66,6 @@ class PLDataModule(LightningDataModule):
         self.test_splits = test_splits
 
     def setup(self, stage: str):
-        print("Rank Setup", self.trainer.local_rank)
         self.dataset = datasets.load_dataset(self.dataset_name)
         self.dataset = self.dataset.map(
             self.convert_to_features,
@@ -93,6 +92,7 @@ class PLDataModule(LightningDataModule):
         Path(f".cache/huggingface/{self.dataset_name}").mkdir(
             parents=True, exist_ok=True
         )
+        print("Data mapping for", self.trainer.local_rank)
         dataset.map(
             self.convert_to_features,
             batched=True,
@@ -198,22 +198,17 @@ class PLDataModule(LightningDataModule):
 
         # Tokenize the text/text pairs
         if isinstance(texts_or_text_pairs, tuple):
+            assert len(texts_or_text_pairs[0]) == len(texts_or_text_pairs[1])
             positives = self.tokenizer(
-                texts_or_text_pairs[0],
-                max_length=self.max_seq_length,
-                padding=True,
-                truncation=True,
-            )
-            negatives = self.tokenizer(
-                texts_or_text_pairs[1],
+                texts_or_text_pairs[0] + texts_or_text_pairs[1],
                 max_length=self.max_seq_length,
                 padding=True,
                 truncation=True,
             )
             result = {}
             for key in positives.data.keys():
-                result[f"positive_{key}"] = positives[key]
-                result[f"negative_{key}"] = negatives[key]
+                result[f"positive_{key}"] = positives[key][: len(texts_or_text_pairs[0])]
+                result[f"negative_{key}"] = positives[key][len(texts_or_text_pairs[0]):]
             return result
         else:
             features = self.tokenizer(
